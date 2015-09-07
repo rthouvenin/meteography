@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Script to collect snapshots from a Wunderground webcam and save them on disk
+Script to collect snapshots from Wunderground webcams and save them on disk
 with the timestamp as filename
 TODO Better options for API key, read latest snapshot date from disk, mkdir 
 
@@ -18,9 +18,9 @@ import urllib2
 import util
 
 parser = argparse.ArgumentParser(
-    description="Collects snapshots from a Wunderground webcam.")
+    description="Collects snapshots from Wunderground webcam(s).")
 parser.add_argument('location', help="XX/City where XX is state or country code")
-parser.add_argument('webcamid', help="The webcam identifier")
+parser.add_argument('webcamids', nargs='+', help="The webcam identifier(s)")
 args = parser.parse_args();
 
 CAMS_DIR = './webcams'
@@ -34,19 +34,20 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def get_webcam_data(loc_query, webcam_name):
+def get_webcam_data(loc_query, webcam_names):
     """
     Queries the webcam API with loc_query, 
-    and returns the json data for the webcam webcam_name
+    and returns the json data for the webcams of webcam_names in a dictionary
+    indexed by the webcam names
     """
     url = '%s/%s/webcams/q/%s.json' % (API_BASE_URL, API_KEY, loc_query)
     response = urllib2.urlopen(url)
     json_response = json.load(response)
     if 'webcams' in json_response:
         webcams = json_response['webcams']
-        webcams = [w for w in webcams if w['camid'] == webcam_name]
+        webcams = {w['camid']: util.JsonProxy(w) for w in webcams if w['camid'] in webcam_names}
         if webcams:
-            return util.JsonProxy(webcams[0])
+            return webcams
         else:
             raise Exception('Webcam not found.')
     else:
@@ -84,33 +85,48 @@ def retrieve_snapshot(webcam):
         except:
             logger.exception('Error while retrieving snapshot %s', filename)
 
-def query_and_retrieve(location, webcam_name, latest_snapshot):
+def retrieve(json_webcam, latest_snapshot):
     """
-    Queries the webcam API, and retrieves a snapshot if a recent one is available
+    Retrieves a snapshot if a recent one is available
+    """
+    logger.debug('%s', json_webcam)
+    has_recent, latest_snapshot = has_recent_snapshot(json_webcam, latest_snapshot)
+    if has_recent:
+        retrieve_snapshot(json_webcam)
+    return latest_snapshot
+    
+def query_and_retrieve(location, webcamids, latests):
+    """
+    Queries from the API the webcam data and retrieves a snapshot from each
+    of them if available
     """
     try:
-        json_webcam = get_webcam_data(location, webcam_name)
-        logger.debug('%s', json_webcam)
-        has_recent, latest_snapshot = has_recent_snapshot(json_webcam, latest_snapshot)
-        if has_recent:
-            retrieve_snapshot(json_webcam)
+        webcams = get_webcam_data(location, webcamids)
+        for w, wid in enumerate(webcams):
+            latests[w] = retrieve(webcams[wid], latests[w])
     except Exception as e:
         if e.message:
             logger.error(e.message)
         else:
             logger.exception('Unknown error')
-    return latest_snapshot
-    
+            
+#Creates webcam directories if required
+for wid in args.webcamids:
+    wdir = os.path.join(CAMS_DIR, wid)
+    if not os.path.exists(wdir):
+        os.mkdir(wdir)
 
-collect_duration = 0 #in hours, 0 for infinite collection
+#Starts retrieval
+collect_duration = 0 #in hours, falsy value for infinite collection
 query_interval = 5 #in minutes
-latest_snapshot = int(time.time())
+t = int(time.time())
+latests = [t] * len(args.webcamids)
 
 if collect_duration:
     for i in range(collect_duration * (60 / query_interval)):
-        latest_snapshot = query_and_retrieve(args.location, args.webcamid, latest_snapshot)
+        query_and_retrieve(args.location, args.webcamids, latests)
         time.sleep(60 * query_interval) #sleep in seconds
 else:
     while True:
-        latest_snapshot = query_and_retrieve(args.location, args.webcamid, latest_snapshot)
+        query_and_retrieve(args.location, args.webcamids, latests)
         time.sleep(60 * query_interval) #sleep in seconds

@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import theano as t
 
-imgpath = 'artificial/rednight/'
+imgpath = 'data/'
 files = [int(f[:-4]) for f in os.listdir(imgpath)]
 files.sort()
 

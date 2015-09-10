@@ -10,8 +10,8 @@ import shutil
 
 import PIL as pil
 
-source_path = 'artificial/rednight'
-dest_path = os.path.join(source_path, '..', 'bigrednight')
+source_path = '../rednight/data'
+dest_path = 'data'
 
 source_files = os.listdir(source_path)
 file_ids = [int(f[:-4]) for f in source_files]

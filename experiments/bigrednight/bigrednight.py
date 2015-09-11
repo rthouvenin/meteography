@@ -118,16 +118,16 @@ def split_dataset(X, y, train=.7, valid=.15):
 # Network construction
 ##
 class Network:
-    def __init__(self, imgdim, nb_units=50, learn_rate=150, hist_len=5,
+    def __init__(self, imgdim, nb_units=[50], learn_rate=150, hist_len=5,
                  update_func=lasagne.updates.momentum):
         input_var = t.tensor.fmatrix('input_var')
         target_var = t.tensor.fmatrix('target_var')
-        l_in = lasagne.layers.InputLayer((None, (imgdim+1)*hist_len), 
-                                         input_var=input_var)
-        l_h = lasagne.layers.DenseLayer(l_in, 
-                    num_units=nb_units, 
+        layer = lasagne.layers.InputLayer((None, (imgdim+1)*hist_len), 
+                                          input_var=input_var)
+        for nu in nb_units:
+            layer = lasagne.layers.DenseLayer(layer, num_units=nu, 
                     nonlinearity=lasagne.nonlinearities.sigmoid)
-        self.l_out = lasagne.layers.DenseLayer(l_h, 
+        self.l_out = lasagne.layers.DenseLayer(layer, 
                     num_units=imgdim,
                     nonlinearity=lasagne.nonlinearities.sigmoid)
 
@@ -179,7 +179,7 @@ class Network:
     def set_params(self, params):
         lasagne.layers.set_all_param_values(self.l_out, params)
         
-def plot_learning_curve(dataset, max_ex=None):
+def plot_learning_curve(dataset, nn, max_ex=None, nb_points=20):
         if max_ex is None:
             max_ex = len(dataset['train'][0])
         train_times = []
@@ -187,15 +187,13 @@ def plot_learning_curve(dataset, max_ex=None):
         valid_costs = []
         Xval = dataset['valid'][0]
         yval = dataset['valid'][1]
-        mrange = range(1, max_ex, max(max_ex // 20, 1))
-        imgdim = yval.shape[1]
-        nn = Network(imgdim)
+        mrange = range(1, max_ex, max(max_ex // nb_points, 1))
         pvalues = nn.get_params()
         for m in mrange:
             nn.set_params(pvalues)
             X = dataset['train'][0][:m]
             y = dataset['train'][1][:m]
-            costs, elapsed = nn.train(X, y, 20)
+            costs, elapsed = nn.train(X, y)
             train_costs.append(nn.compute_loss(X, y))
             train_times.append(elapsed)
             valid_costs.append(nn.compute_loss(Xval, yval))
@@ -205,9 +203,10 @@ def plot_learning_curve(dataset, max_ex=None):
         ax1.set_ylabel('Cost')
         ax1.plot(mrange, train_costs, 'g', label='training cost')
         ax1.plot(mrange, valid_costs, 'r', label='validation cost')
+        ax1.legend()
         ax2 = ax1.twinx()
         ax2.set_ylabel('Time (s)')
         ax2.plot(mrange, train_times, 'b', label='training time')
         ax2.legend()
         plt.show()
-            
+

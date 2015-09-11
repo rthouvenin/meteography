@@ -118,7 +118,8 @@ def split_dataset(X, y, train=.7, valid=.15):
 # Network construction
 ##
 class Network:
-    def __init__(self, imgdim, nb_units=50, learn_rate=50, hist_len=5):
+    def __init__(self, imgdim, nb_units=50, learn_rate=150, hist_len=5,
+                 update_func=lasagne.updates.momentum):
         input_var = t.tensor.fmatrix('input_var')
         target_var = t.tensor.fmatrix('target_var')
         l_in = lasagne.layers.InputLayer((None, (imgdim+1)*hist_len), 
@@ -135,7 +136,7 @@ class Network:
         loss = lasagne.objectives.squared_error(prediction, target_var).mean()
         self._loss = t.function([input_var, target_var], loss, name='loss')
         params = lasagne.layers.get_all_params(self.l_out, trainable=True)
-        updates = lasagne.updates.sgd(loss, params, learning_rate=learn_rate)
+        updates = update_func(loss, params, learning_rate=learn_rate)
         self._train = t.function([input_var, target_var], 
                            loss, updates=updates, name='train')
         

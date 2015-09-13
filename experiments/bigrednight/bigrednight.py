@@ -11,6 +11,7 @@ The main differences are:
 """
 
 import os.path
+import pickle
 import random
 import time
 
@@ -112,8 +113,75 @@ def split_dataset(X, y, train=.7, valid=.15):
     return {'train': (Xtrain, ytrain), 
             'valid': (Xvalid, yvalid), 
             'test' : (Xtest, ytest)}
-    
-    
+
+def get_pca_reducer(X, keep_variance):
+    """
+    Computes the matrix to use to apply PCA to matrix X while keeping the
+    variance keep_variance.
+    """
+    #Applies SVD
+    Sigma = np.dot(X.T, X) / len(X)
+    U, S, V = np.linalg.svd(Sigma)
+    #Finds the smallest dimension that keeps enough variance
+    total_sum = np.sum(S)
+    partial_sum = 0
+    dim, var = 0, 0
+    while dim < len(S) and var < keep_variance:
+        partial_sum += S[dim]
+        var = partial_sum / total_sum
+        dim += 1
+    return U[:, :dim]
+
+def reduce_dataset(dataset, keep_variance=0.99, hist_len=5):
+    """
+    Tries to reduce the dimensionality of the dataset by applying PCA to the 
+    list of all images contained in the training set.
+    The same reduction is then applied to the images of the training targets, 
+    as well as the images of the validation and test sets and their respective 
+    targets.
+    Returns a dictionary similar to dataset with the reduced data, and the
+    reduction matrix used with label 'reducer'.
+    The reduction is applied only to the images, not the data points (that are
+    made of several images)
+    """
+    X = dataset['train'][0]
+    #Build matrix of images
+    imgdim = X.shape[1] / hist_len - 1
+    images = X[:,:-hist_len].reshape((len(X)*hist_len, imgdim))
+    Ur = get_pca_reducer(images, keep_variance)
+    if Ur.shape[1] == imgdim:
+        print("Could not reduce the dimensionality of the images.")
+        print("Returning initial dataset.")
+        result = dataset
+    else:
+        result = {}
+        result['reducer'] = Ur 
+        images_r = np.dot(images, Ur)
+        #Re-stack the time features to the reduced images
+        X_r = np.hstack([images_r.reshape((len(X), -1)), X[:, -hist_len:]])
+        y_r = np.dot(dataset['train'][1], Ur)
+        result['train'] = X_r, y_r
+        for dset in ['valid', 'test']:
+            X = dataset[dset][0]
+            if len(X):
+                imgs = X[:,:-hist_len].reshape((len(X)*hist_len, imgdim))
+                imgs_r = np.dot(imgs, Ur)
+                X_r = np.hstack([imgs_r.reshape((len(X), -1)), X[:, -hist_len:]])
+                y_r = np.dot(dataset[dset][1], Ur)
+                result[dset] = X_r, y_r
+            else:
+                result[dset] = dataset[dset]
+    return result
+
+def load_dataset(datapath='data.pack'):
+    """
+    Loads a dataset object from file datapath
+    """
+    reducedset = {}
+    with open(datapath, 'r') as f:
+        reducedset = pickle.load(f)
+    return reducedset
+
 ##
 # Network construction
 ##

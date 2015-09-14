@@ -172,6 +172,16 @@ def reduce_dataset(dataset, keep_variance=0.99, hist_len=5):
             else:
                 result[dset] = dataset[dset]
     return result
+    
+def recover_image(reducedset, img):
+    """
+    From an extract img of the reducedset (example extract or target value),
+    reconstructs the original data (before reduction) and reshapes it to an image
+    """
+    Ur = reducedset['reducer']
+    original = np.dot(Ur, img)
+    img_width = int(np.sqrt(len(original) / 3)) # assuming square and RGB
+    return original.reshape((img_width, img_width, 3))
 
 def load_dataset(datapath='data.pack'):
     """
@@ -187,7 +197,9 @@ def load_dataset(datapath='data.pack'):
 ##
 class Network:
     def __init__(self, imgdim, nb_units=[50], learn_rate=150, hist_len=5,
-                 update_func=lasagne.updates.momentum):
+                 update_func=lasagne.updates.momentum, outdim=None):
+        if outdim is None:
+            outdim = imgdim
         input_var = t.tensor.fmatrix('input_var')
         target_var = t.tensor.fmatrix('target_var')
         layer = lasagne.layers.InputLayer((None, (imgdim+1)*hist_len), 
@@ -196,7 +208,7 @@ class Network:
             layer = lasagne.layers.DenseLayer(layer, num_units=nu, 
                     nonlinearity=lasagne.nonlinearities.sigmoid)
         self.l_out = lasagne.layers.DenseLayer(layer, 
-                    num_units=imgdim,
+                    num_units=outdim,
                     nonlinearity=lasagne.nonlinearities.sigmoid)
 
         prediction = lasagne.layers.get_output(self.l_out)
@@ -262,7 +274,7 @@ def plot_learning_curve(dataset, nn, max_ex=None, nb_points=20):
             X = dataset['train'][0][:m]
             y = dataset['train'][1][:m]
             costs, elapsed = nn.train(X, y)
-            train_costs.append(nn.compute_loss(X, y))
+            train_costs.append(costs[-1])
             train_times.append(elapsed)
             valid_costs.append(nn.compute_loss(Xval, yval))
         #Plot the curves

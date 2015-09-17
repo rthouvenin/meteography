@@ -170,7 +170,7 @@ def reduce_dataset(dataset, keep_variance=0.99, hist_len=5):
                 y_r = np.dot(dataset[dset][1], Ur)
                 result[dset] = X_r, y_r
             else:
-                result[dset] = dataset[dset]
+                result[dset] = np.array((0, X_r.shape[1])), np.array((0, y_r.shape[1]))
     return result
     
 def recover_image(reducedset, img):
@@ -182,6 +182,18 @@ def recover_image(reducedset, img):
     original = np.dot(Ur, img)
     img_width = int(np.sqrt(len(original) / 3)) # assuming square and RGB
     return original.reshape((img_width, img_width, 3))
+
+def normalize_dataset(dataset):
+    result = {}
+    if 'reducer' in dataset:
+        result['reducer'] = dataset['reducer']
+    X = dataset['train'][0]
+    maxX = np.abs(np.max(X, 0, keepdims=True))
+    for setname in ['train', 'valid', 'test']:
+        if len(dataset[setname][0]):
+            result[setname] = (dataset[setname][0] / maxX), dataset[setname][1]
+    result['normalizer'] = maxX
+    return result
 
 def load_dataset(datapath='data.pack'):
     """
@@ -208,7 +220,7 @@ class Network:
             layer = lasagne.layers.DenseLayer(layer, num_units=nu, 
                     nonlinearity=lasagne.nonlinearities.sigmoid)
         self.l_out = lasagne.layers.DenseLayer(layer, 
-                    num_units=outdim,
+                    num_units=outdim, 
                     nonlinearity=lasagne.nonlinearities.sigmoid)
 
         prediction = lasagne.layers.get_output(self.l_out)
@@ -259,7 +271,7 @@ class Network:
     def set_params(self, params):
         lasagne.layers.set_all_param_values(self.l_out, params)
         
-def plot_learning_curve(dataset, nn, max_ex=None, nb_points=20):
+def plot_learning_curve(dataset, nn, max_ex=None, nb_points=20, max_epoch=500):
         if max_ex is None:
             max_ex = len(dataset['train'][0])
         train_times = []
@@ -273,7 +285,7 @@ def plot_learning_curve(dataset, nn, max_ex=None, nb_points=20):
             nn.set_params(pvalues)
             X = dataset['train'][0][:m]
             y = dataset['train'][1][:m]
-            costs, elapsed = nn.train(X, y)
+            costs, elapsed = nn.train(X, y, max_epoch=max_epoch)
             train_costs.append(costs[-1])
             train_times.append(elapsed)
             valid_costs.append(nn.compute_loss(Xval, yval))
@@ -281,12 +293,12 @@ def plot_learning_curve(dataset, nn, max_ex=None, nb_points=20):
         fig, ax1 = plt.subplots()
         ax1.set_xlabel('Number of examples')
         ax1.set_ylabel('Cost')
-        ax1.plot(mrange, train_costs, 'g', label='training cost')
-        ax1.plot(mrange, valid_costs, 'r', label='validation cost')
+        ax1.plot(mrange, train_costs, 'g', label='train. cost')
+        ax1.plot(mrange, valid_costs, 'r', label='valid. cost')
         ax1.legend()
-        ax2 = ax1.twinx()
-        ax2.set_ylabel('Time (s)')
-        ax2.plot(mrange, train_times, 'b', label='training time')
-        ax2.legend()
+#        ax2 = ax1.twinx()
+#        ax2.set_ylabel('Time (s)')
+#        ax2.plot(mrange, train_times, 'b', label='training time')
+#        ax2.legend()
         plt.show()
 

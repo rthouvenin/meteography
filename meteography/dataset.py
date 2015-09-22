@@ -1,0 +1,235 @@
+# -*- coding: utf-8 -*-
+"""
+Classes and associated helper functions to create and manipulate the data sets 
+used in the machine learning machinery
+TODO: support RGB pictures
+TODO: export ImageSet as SortedDictCollection?
+TODO: doc and tests
+"""
+
+import bisect
+import os.path
+import pickle
+
+import numpy as np
+import PIL
+
+MAX_PIXEL_VALUE = 256
+
+class ImageSet:
+    def __init__(self, images):
+        assert images
+        self.images = sorted(images, key=lambda x: x['time'])
+        self.times = [i['time'] for i in self.images]
+    
+    def find_closest(self, start, interval):
+        """
+        Search for the image with its time attribute the closest to 
+        `start+interval`, constrained in `]start, start+2*interval]`.
+        This is a binary search in O(log n)
+        
+        Return
+        ------
+        The image (a `dict`) or `None` if none is found
+        """
+        assert start >= 0 and interval > 0
+        target = start + interval
+        maxtarget = target + interval
+        idx = bisect.bisect(self.times, start+interval)
+        left_time = self.time(idx-1) #We know left_time <= target < maxtarget
+        if idx == len(self.times):
+            right_time = maxtarget+1 # unreachable
+        else:
+            right_time = self.time(idx) #We know right_time > target
+        if target - left_time < right_time - target:
+            if left_time > start:
+                return self.images[idx-1]
+            else: #At this point we can deduce that right_time > maxtarget
+                return None
+        else:
+            if right_time <= maxtarget:
+                return self.images[idx]
+            else: #At this point we can deduce that left_time < start
+                return None
+            
+    
+    def find_datapoints(self, hist_len, interval, future_time):
+        """
+        Build a list of tuples (input_images, output_value).
+        
+        Parameters
+        ----------
+        hist_len : int (strictly greater than 0)
+            The number of input images in each data point
+        interval : int (strictly greater than 0)
+            The approximate (+/- 100%) time interval between each input image
+        future_time : int (strictly greater than 0)
+            The approximate (+/- 100%) time interval between the last input 
+            image and the output value
+        """
+        assert hist_len > 0 and interval > 0 and future_time > 0
+        data_points = []
+        for i, img in enumerate(self):
+            images_i = [img]
+            for j in range(1, hist_len):
+                prev_time = images_i[j-1]['time']
+                img_j = self.find_closest(prev_time, interval)
+                if img_j:
+                    images_i.append(img_j)
+                else:
+                    break
+            if len(images_i) == hist_len:
+                latest_time = images_i[-1]['time']
+                target = self.find_closest(latest_time, future_time)
+                if target:
+                    data_points.append((images_i, target))
+        return data_points
+    
+    def time(self, i):
+        return self.images[i]['time']
+    
+    def __getitem__(self, item):
+        return self.images[item]
+    
+    def __iter__(self):
+        return iter(self.images)
+
+class DataSet:
+    def __init__(self, imgshape, indata, outdata):
+        self.img_shape = imgshape
+        self.img_size = np.prod(imgshape)
+        self.history_len = indata.shape[1] / self.img_size - 1
+        self.input_data = indata
+        self.output_data = outdata
+    
+    def input_img(self, i, j):
+        """
+        Return the pixels the `j`th image from example `i` in the input data, 
+        with its original shape (directly displayable by matplotlib)
+        """
+        assert 0 <= i < len(self.input_data) and 0 <= j < self.history_len
+        img = self.input_data[i, j*self.img_size:(j+1)*self.img_size]
+        return img.reshape(self.img_shape)
+    
+    def output_img(self, i):
+        """
+        Return the pixels the `i`th output image, 
+        with its original shape (directly displayable by matplotlib)
+        """
+        assert 0 <= i < len(self.output_data)
+        img = self.output_data[i]
+        return img.reshape(self.img_shape)
+    
+    @classmethod
+    def make(cls, dirpath, hist_len=3, interval=10, future_time=30):
+        """
+        Build a DataSet from the images located in the directory `dirpath`.
+        
+        The input and target data are built, but not split into training, 
+        validation and test sets (use `split` for that). The file names without 
+        the extension should be the Epoch when the photo was taken. All the 
+        files are attempted to be read, the ones cannot be read as an image 
+        or whose time cannot be read are ignored. All the images are expected
+        to have the same dimensions.
+        
+        Parameters
+        ----------
+        dirpath : str
+            The directory containing all the source images. 
+        hist_len : int
+            The number of images to include in the input data
+        interval : int
+            The number of minutes between each input image
+        future_time : int
+            The number of minutes between the latest input image and the target image
+        """
+        filenames = [os.path.join(dirpath, f) for f in os.listdir(dirpath)]
+        files = map(parse_filename, filenames)
+        #Filter out junk
+        files = [f for f in files if 'error' not in f]
+        imgshape = files[0]['shape']
+        files = [f for f in files if f['shape'] == imgshape]
+        #TODO delay extraction
+        images = ImageSet(map(extract_image, files)) 
+        #Make actual input and output data
+        X, y = DataSet.make_datapoints(images, hist_len, interval, future_time)
+        return cls(imgshape, X, y)
+        
+    def save(self, path):
+        """
+        Save this DataSet in a file.
+        
+        Parameters
+        ----------
+        path : str
+            the file name. If the file does not exist it is created
+        """
+        with open(path, 'wb') as f:
+            pickle.dump(self, f)
+            
+    @staticmethod
+    def load(path):
+        """
+        Create a DataSet from a file created with the `save` method
+        
+        Parameters
+        ----------
+        path : str
+            the file name
+        """
+        with open(path, 'rb') as f:
+            pickle.load(f)
+    
+    @staticmethod
+    def make_datapoints(images, hist_len, interval, future_time):
+        #Convert durations into seconds
+        interval *= 60
+        future_time *= 60
+        #Find data points
+        data_points = images.find_datapoints(hist_len, interval, future_time)
+        #Copy the data into numpy arrays
+        imgdim = np.prod(images[0]['shape'])
+        nb_ex = len(data_points)
+        nb_feat = (imgdim+1) * hist_len
+        input_data = np.ndarray((nb_ex, nb_feat), dtype=np.float32)
+        output_data = np.ndarray((nb_ex, imgdim), dtype=np.float32)
+        for i, data_point in enumerate(data_points):
+            example, target = data_point
+            for j, img in enumerate(example):
+                input_data[i, imgdim*j:imgdim*(j+1)] = img['data']
+                input_data[i, j-hist_len] = target['time'] - img['time']
+            output_data[i] = target['data']
+        return input_data, output_data
+
+
+def parse_filename(filename):
+    """
+    Open `filename` as an image and read some metadata.    
+    """
+    filedict = {'fullpath': filename}
+    fp = None
+    try:
+        #PIL will take care of closing the file when loading the data
+        fp = open(filename, 'rb') 
+        img = PIL.Image.open(fp)
+        filedict['pil_img'] = img
+        filedict['shape'] = img.size[1], img.size[0] #FIXME relies on B&W conversion
+        basename = os.path.basename(filename)
+        strtime = basename[:basename.index('.')]
+        filedict['time'] = int(strtime) 
+    except Exception as e:
+        filedict['error'] = e
+        if fp:
+            fp.close()
+    return filedict
+
+def extract_image(file_dict):
+    """
+    Read the pixels of the image in `filedict` and return a flat array with
+    the value of the pixels in [0,1]
+    """
+    #FIXME For now, we force grayscale to limit dimensionality
+    bw_image = file_dict['pil_img'].convert('L').getdata()
+    data = np.array(bw_image, dtype=np.float32) / MAX_PIXEL_VALUE
+    file_dict['data'] = data
+    return file_dict

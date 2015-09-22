@@ -1,4 +1,7 @@
 *.pyc
+*.egg-info
+.cache
 
 WU_API_KEY
 webcams/
+

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Classes and associated helper functions to create and manipulate the data sets 
+Classes and associated helper functions to create and manipulate the data sets
 used in the machine learning machinery
 TODO: support RGB pictures
 TODO: export ImageSet as SortedDictCollection?
@@ -16,18 +16,19 @@ import PIL
 
 MAX_PIXEL_VALUE = 256
 
+
 class ImageSet:
     def __init__(self, images):
         assert images
         self.images = sorted(images, key=lambda x: x['time'])
         self.times = [i['time'] for i in self.images]
-    
+
     def find_closest(self, start, interval):
         """
-        Search for the image with its time attribute the closest to 
+        Search for the image with its time attribute the closest to
         `start+interval`, constrained in `]start, start+2*interval]`.
         This is a binary search in O(log n)
-        
+
         Return
         ------
         The image (a `dict`) or `None` if none is found
@@ -36,27 +37,26 @@ class ImageSet:
         target = start + interval
         maxtarget = target + interval
         idx = bisect.bisect(self.times, start+interval)
-        left_time = self.time(idx-1) #We know left_time <= target < maxtarget
+        left_time = self.time(idx-1)  # We know left_time <= target < maxtarget
         if idx == len(self.times):
-            right_time = maxtarget+1 # unreachable
+            right_time = maxtarget+1  # unreachable
         else:
-            right_time = self.time(idx) #We know right_time > target
+            right_time = self.time(idx)  # We know right_time > target
         if target - left_time < right_time - target:
             if left_time > start:
                 return self.images[idx-1]
-            else: #At this point we can deduce that right_time > maxtarget
+            else:  # At this point we can deduce that right_time > maxtarget
                 return None
         else:
             if right_time <= maxtarget:
                 return self.images[idx]
-            else: #At this point we can deduce that left_time < start
+            else:  # At this point we can deduce that left_time < start
                 return None
-            
-    
+
     def find_datapoints(self, hist_len, interval, future_time):
         """
         Build a list of tuples (input_images, output_value).
-        
+
         Parameters
         ----------
         hist_len : int (strictly greater than 0)
@@ -64,7 +64,7 @@ class ImageSet:
         interval : int (strictly greater than 0)
             The approximate (+/- 100%) time interval between each input image
         future_time : int (strictly greater than 0)
-            The approximate (+/- 100%) time interval between the last input 
+            The approximate (+/- 100%) time interval between the last input
             image and the output value
         """
         assert hist_len > 0 and interval > 0 and future_time > 0
@@ -84,15 +84,16 @@ class ImageSet:
                 if target:
                     data_points.append((images_i, target))
         return data_points
-    
+
     def time(self, i):
         return self.images[i]['time']
-    
+
     def __getitem__(self, item):
         return self.images[item]
-    
+
     def __iter__(self):
         return iter(self.images)
+
 
 class DataSet:
     def __init__(self, imgshape, indata, outdata):
@@ -101,47 +102,92 @@ class DataSet:
         self.history_len = indata.shape[1] / self.img_size - 1
         self.input_data = indata
         self.output_data = outdata
-    
+
     def input_img(self, i, j):
         """
-        Return the pixels the `j`th image from example `i` in the input data, 
+        Return the pixels the `j`th image from example `i` in the input data,
         with its original shape (directly displayable by matplotlib)
         """
         assert 0 <= i < len(self.input_data) and 0 <= j < self.history_len
         img = self.input_data[i, j*self.img_size:(j+1)*self.img_size]
         return img.reshape(self.img_shape)
-    
+
     def output_img(self, i):
         """
-        Return the pixels the `i`th output image, 
+        Return the pixels the `i`th output image,
         with its original shape (directly displayable by matplotlib)
         """
         assert 0 <= i < len(self.output_data)
         img = self.output_data[i]
         return img.reshape(self.img_shape)
-    
+
+    def split(self, train=.7, valid=.15):
+        """
+        Split in the examples into a training set, validation set and test set.
+        The data is shuffled before the split, and the original order is lost.
+        The method can be called multiple times to apply multiple shuffles and
+        obtain different training/validation/test splits.
+        The examples allocated to the test set are the remaining ones after
+        creating the training and validation sets
+
+        Parameters
+        ----------
+        train : float in [0, 1]
+            The proportion of examples to allocate to the training set
+        valid : float in [0, 1], with `train` + `valid` <= 1
+            The proportion of examples to allocate to the validation set
+        """
+        assert 0 <= (train + valid) <= 1
+        full_size = len(self.input_data)
+        indexes = range(full_size)
+        np.random.shuffle(indexes)
+        self.input_data = self.input_data[indexes]
+        self.output_data = self.output_data[indexes]
+        train_size = int(full_size * train)
+        valid_size = int(full_size * valid)
+        #These are views, not copies
+        self.train_input = self.input_data[:train_size]
+        self.train_output = self.output_data[:train_size]
+        self.valid_input = self.input_data[train_size:train_size+valid_size]
+        self.valid_output = self.output_data[train_size:train_size+valid_size]
+        self.test_input = self.input_data[train_size+valid_size:]
+        self.test_output = self.output_data[train_size+valid_size:]
+
+    def training_set(self):
+        "Return the tuple input, output of the training set"
+        return self.train_input, self.train_output
+
+    def validation_set(self):
+        "Return the tuple input, output of the validation set"
+        return self.valid_input, self.valid_output
+
+    def test_set(self):
+        "Return the tuple input, output of the test set"
+        return self.test_input, self.test_output
+
     @classmethod
     def make(cls, dirpath, hist_len=3, interval=10, future_time=30):
         """
         Build a DataSet from the images located in the directory `dirpath`.
-        
-        The input and target data are built, but not split into training, 
-        validation and test sets (use `split` for that). The file names without 
-        the extension should be the Epoch when the photo was taken. All the 
-        files are attempted to be read, the ones cannot be read as an image 
+
+        The input and target data are built, but not split into training,
+        validation and test sets (use `split` for that). The file names without
+        the extension should be the Epoch when the photo was taken. All the
+        files are attempted to be read, the ones cannot be read as an image
         or whose time cannot be read are ignored. All the images are expected
         to have the same dimensions.
-        
+
         Parameters
         ----------
         dirpath : str
-            The directory containing all the source images. 
+            The directory containing all the source images.
         hist_len : int
             The number of images to include in the input data
         interval : int
             The number of minutes between each input image
         future_time : int
-            The number of minutes between the latest input image and the target image
+            The number of minutes between the latest input image
+            and the target image
         """
         filenames = [os.path.join(dirpath, f) for f in os.listdir(dirpath)]
         files = map(parse_filename, filenames)
@@ -150,15 +196,15 @@ class DataSet:
         imgshape = files[0]['shape']
         files = [f for f in files if f['shape'] == imgshape]
         #TODO delay extraction
-        images = ImageSet(map(extract_image, files)) 
+        images = ImageSet(map(extract_image, files))
         #Make actual input and output data
         X, y = DataSet.make_datapoints(images, hist_len, interval, future_time)
         return cls(imgshape, X, y)
-        
+
     def save(self, path):
         """
         Save this DataSet in a file.
-        
+
         Parameters
         ----------
         path : str
@@ -166,12 +212,12 @@ class DataSet:
         """
         with open(path, 'wb') as f:
             pickle.dump(self, f)
-            
+
     @staticmethod
     def load(path):
         """
         Create a DataSet from a file created with the `save` method
-        
+
         Parameters
         ----------
         path : str
@@ -179,9 +225,13 @@ class DataSet:
         """
         with open(path, 'rb') as f:
             pickle.load(f)
-    
+
     @staticmethod
     def make_datapoints(images, hist_len, interval, future_time):
+        """
+        Auxiliary method of `DataSet.make` to create the data points from the
+        ImageSet `images`.
+        """
         #Convert durations into seconds
         interval *= 60
         future_time *= 60
@@ -204,24 +254,26 @@ class DataSet:
 
 def parse_filename(filename):
     """
-    Open `filename` as an image and read some metadata.    
+    Open `filename` as an image and read some metadata.
     """
     filedict = {'fullpath': filename}
     fp = None
     try:
         #PIL will take care of closing the file when loading the data
-        fp = open(filename, 'rb') 
+        fp = open(filename, 'rb')
         img = PIL.Image.open(fp)
         filedict['pil_img'] = img
-        filedict['shape'] = img.size[1], img.size[0] #FIXME relies on B&W conversion
+        #FIXME relies on B&W conversion
+        filedict['shape'] = img.size[1], img.size[0]
         basename = os.path.basename(filename)
         strtime = basename[:basename.index('.')]
-        filedict['time'] = int(strtime) 
+        filedict['time'] = int(strtime)
     except Exception as e:
         filedict['error'] = e
         if fp:
             fp.close()
     return filedict
+
 
 def extract_image(file_dict):
     """

@@ -17,7 +17,7 @@ class Perceptron:
     def __init__(self, insize, outsize, nb_units=[50], learn_rate=50,
                  update_func=lasagne.updates.momentum):
         """
-        Create a Perceptron
+        Create a multi-layer perceptron neural network
 
         Parameters
         ----------

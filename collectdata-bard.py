@@ -13,6 +13,7 @@ import os.path
 import time
 import urllib2
 
+
 # Arguments parsing
 class DateAction(argparse.Action):
     def __init__(self, option_strings, dest, **kwargs):
@@ -32,7 +33,7 @@ parser.add_argument('start', action=DateAction,
                     help="Start date, format yyyymmddhhmm")
 parser.add_argument('end', nargs='?', action=DateAction,
                     help="End date, format yyyymmddhhmm, default: current date")
-args = parser.parse_args();
+args = parser.parse_args()
 
 #Logging
 logging.basicConfig(format='%(asctime)s: %(message)s')
@@ -55,4 +56,4 @@ while current_time <= args.end:
     except:
         logging.error("Could not retrieve picture taken at %s." % current_time)
     current_time += IMG_FREQUENCY
-    time.sleep(1) #Let's not be too harsh on the server
+    time.sleep(1)  # Let's not be too harsh on the server

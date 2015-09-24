@@ -3,7 +3,7 @@
 
 """
 Script to collect snapshots from Wunderground webcams.
-Does not use the API, but instead read the images from a list of URLs, 
+Does not use the API, but instead read the images from a list of URLs,
 and assumes the http header indicates when the picture was taken.
 """
 
@@ -16,11 +16,12 @@ import urllib2
 URL_FILE = 'urls.txt'
 WEBCAM_DIR = 'webcams'
 LAST_UPDATE_HEADER = 'Last-Modified'
-QUERY_INTERVAL = 5 #in minutes
+QUERY_INTERVAL = 5  # in minutes
 
 logging.basicConfig(format='%(asctime)s: %(message)s')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
 
 def parse_url(url):
     """Extract webcam data from its URL"""
@@ -29,8 +30,8 @@ def parse_url(url):
     file_ext = url[-5:-1]
     last_update = 0.
     return {
-        'url': url[:-1], #Skip end of line
-        'name': webcam_name, 
+        'url': url[:-1],  # Skip end of line
+        'name': webcam_name,
         'imgpath': os.path.join(WEBCAM_DIR, webcam_name, '%d' + file_ext),
         'last_update': last_update
         }

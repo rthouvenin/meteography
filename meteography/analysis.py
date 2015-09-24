@@ -3,14 +3,14 @@
 Functions to help with the analysis of learning algorithms.
 """
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
 
 def compare_inputs(in1, in2, shape, hist_len):
     """
-    Show with matplotlib the inputs as 2 rows of `hist_len` images side-by-side
+    Return a matplotlib image with the inputs as 2 rows
+    of `hist_len` images side-by-side
     """
     images1, images2 = [], []
     img_size = np.prod(shape)
@@ -20,19 +20,17 @@ def compare_inputs(in1, in2, shape, hist_len):
     img1 = np.hstack(images1)
     img2 = np.hstack(images2)
     hline = np.zeros((1, shape[1]*hist_len))
-    incmp = np.vstack([img1, hline, img2])
-    plt.imshow(incmp, cmap=matplotlib.cm.Greys_r)
+    return np.vstack([img1, hline, img2])
 
 
 def compare_outputs(out1, out2, shape):
     """
-    Show with matplotlib the 2 outputs as images side-by-side
+    Return a matplotlib image with the 2 outputs side-by-side
     """
     img1 = out1.reshape(shape)
     img2 = out2.reshape(shape)
     vline = np.zeros((shape[0], 1))
-    outcmp = np.hstack([img1, vline, img2])
-    plt.imshow(outcmp, cmap=matplotlib.cm.Greys_r)
+    return np.hstack([img1, vline, img2])
 
 
 def plot_learning_curve(dataset, algo, max_ex=None, nb_points=20, **kwargs):

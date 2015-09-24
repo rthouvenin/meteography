@@ -20,10 +20,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import theano as t
 
+
 ##
 # Data set construction
 ##
-
 
 def get_file_time(f):
     return int(f[:1]), int(f[1:3]), int(f[3:4])

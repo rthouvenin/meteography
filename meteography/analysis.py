@@ -19,7 +19,10 @@ def compare_inputs(in1, in2, shape, hist_len):
         images2.append(in2[img_size*i:img_size*(i+1)].reshape(shape))
     img1 = np.hstack(images1)
     img2 = np.hstack(images2)
-    hline = np.zeros((1, shape[1]*hist_len))
+    hshape = list(shape)
+    hshape[0] = 1  # thickness in pixels of the horizontal line
+    hshape[1] *= hist_len
+    hline = np.zeros(hshape)
     return np.vstack([img1, hline, img2])
 
 
@@ -29,7 +32,9 @@ def compare_outputs(out1, out2, shape):
     """
     img1 = out1.reshape(shape)
     img2 = out2.reshape(shape)
-    vline = np.zeros((shape[0], 1))
+    vshape = list(shape)
+    vshape[1] = 1  # thickness in pixels of the vertical line
+    vline = np.zeros(vshape)
     return np.hstack([img1, vline, img2])
 
 

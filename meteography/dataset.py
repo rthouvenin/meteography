@@ -2,7 +2,6 @@
 """
 Classes and associated helper functions to create and manipulate the data sets
 used in the machine learning machinery
-TODO: support RGB pictures
 TODO: export ImageSet as SortedDictCollection?
 TODO: doc and tests
 """
@@ -15,7 +14,9 @@ import numpy as np
 import PIL
 from sklearn.decomposition import PCA
 
-MAX_PIXEL_VALUE = 256
+MAX_PIXEL_VALUE = 255
+COLOR_BANDS = ('R', 'G', 'B')
+GREY_BANDS = ('L', )
 
 
 class ImageSet:
@@ -88,7 +89,7 @@ class ImageSet:
         return data_points
 
     @classmethod
-    def make(cls, dirpath):
+    def make(cls, dirpath, greyscale=False):
         """
         Build a ImageSet from the images located in the directory `dirpath`.
         """
@@ -98,8 +99,7 @@ class ImageSet:
         files = [f for f in files if 'error' not in f]
         imgshape = files[0]['shape']
         files = [f for f in files if f['shape'] == imgshape]
-        #TODO delay extraction
-        return cls(map(extract_image, files))
+        return cls(map(lambda f: extract_image(f, greyscale), files))
 
     def time(self, i):
         return self.images[i]['time']
@@ -322,7 +322,6 @@ def parse_filename(filename):
         fp = open(filename, 'rb')
         img = PIL.Image.open(fp)
         filedict['pil_img'] = img
-        #FIXME relies on B&W conversion
         filedict['shape'] = img.size[1], img.size[0]
         basename = os.path.basename(filename)
         strtime = basename[:basename.index('.')]
@@ -334,13 +333,22 @@ def parse_filename(filename):
     return filedict
 
 
-def extract_image(file_dict):
+def extract_image(file_dict, grayscale=False):
     """
-    Read the pixels of the image in `filedict` and return a flat array with
-    the value of the pixels in [0,1]
+    Read the pixels of the image in `filedict` and store them in a 'data'
+    attribute as a flat array with the value of the pixels in [0,1]
     """
-    #FIXME For now, we force grayscale to limit dimensionality
-    bw_image = file_dict['pil_img'].convert('L').getdata()
-    data = np.array(bw_image, dtype=np.float32) / MAX_PIXEL_VALUE
+    expected_bands = GREY_BANDS if grayscale else COLOR_BANDS
+    bands = file_dict['pil_img'].getbands()
+    img = file_dict['pil_img']
+    if bands != expected_bands:
+        img = img.convert(''.join(expected_bands))
+    raw_data = img.getdata()
+    data = np.asarray(raw_data, dtype=np.float32) / MAX_PIXEL_VALUE
+    #Flatten the data in case of RGB tuples
+    if len(data.shape) > 1:
+        data = data.flatten()
     file_dict['data'] = data
+    if not grayscale:
+        file_dict['shape'] += (3, )
     return file_dict

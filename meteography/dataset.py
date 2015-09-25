@@ -13,6 +13,7 @@ import pickle
 
 import numpy as np
 import PIL
+from sklearn.decomposition import PCA
 
 MAX_PIXEL_VALUE = 256
 
@@ -22,6 +23,7 @@ class ImageSet:
         assert images
         self.images = sorted(images, key=lambda x: x['time'])
         self.times = [i['time'] for i in self.images]
+        self.img_shape = images[0]['shape']
 
     def find_closest(self, start, interval):
         """
@@ -85,6 +87,20 @@ class ImageSet:
                     data_points.append((images_i, target))
         return data_points
 
+    @classmethod
+    def make(cls, dirpath):
+        """
+        Build a ImageSet from the images located in the directory `dirpath`.
+        """
+        filenames = [os.path.join(dirpath, f) for f in os.listdir(dirpath)]
+        files = map(parse_filename, filenames)
+        #Filter out junk
+        files = [f for f in files if 'error' not in f]
+        imgshape = files[0]['shape']
+        files = [f for f in files if f['shape'] == imgshape]
+        #TODO delay extraction
+        return cls(map(extract_image, files))
+
     def time(self, i):
         return self.images[i]['time']
 
@@ -99,9 +115,10 @@ class DataSet:
     def __init__(self, imgshape, indata, outdata):
         self.img_shape = imgshape
         self.img_size = np.prod(imgshape)
-        self.history_len = indata.shape[1] / self.img_size - 1
+        self.history_len = indata.shape[1] / (self.img_size + 1)
         self.input_data = indata
         self.output_data = outdata
+        self.is_split = False
 
     def input_img(self, i, j):
         """
@@ -145,25 +162,74 @@ class DataSet:
         self.output_data = self.output_data[indexes]
         train_size = int(full_size * train)
         valid_size = int(full_size * valid)
+        self.__dispatch_data(train_size, valid_size)
+        self.is_split = True
+
+    def __dispatch_data(self, train_size, valid_size, dispatch_output=True):
         #These are views, not copies
+        endvalid = train_size + valid_size
         self.train_input = self.input_data[:train_size]
-        self.train_output = self.output_data[:train_size]
-        self.valid_input = self.input_data[train_size:train_size+valid_size]
-        self.valid_output = self.output_data[train_size:train_size+valid_size]
+        self.valid_input = self.input_data[train_size:endvalid]
         self.test_input = self.input_data[train_size+valid_size:]
-        self.test_output = self.output_data[train_size+valid_size:]
+        if dispatch_output:
+            self.train_output = self.output_data[:train_size]
+            self.valid_output = self.output_data[train_size:endvalid]
+            self.test_output = self.output_data[train_size+valid_size:]
+
+    def reduce_dim(self, reduce_output=True):
+        """
+        Apply PCA transformation to each input image of the dataset, and to
+        output images as well if `reduce_output` is True.
+        When the dataset was split, the reduction matrix is computed on the
+        training image (but the whole dataset is then reduced).
+        """
+        Xtrain = self.training_set()[0]
+        #Approx. of all training images: the first image of each training input
+        X = Xtrain[:, :self.img_size]
+        self.pca = PCA(copy=True).fit(X)
+        self.input_data = self.reduce_input(self.input_data)
+        if reduce_output:
+            self.output_data = self.pca.transform(self.output_data)
+        if self.is_split:
+            train_size = len(Xtrain)
+            valid_size = len(self.valid_input)
+            self.__dispatch_data(train_size, valid_size, reduce_output)
+        return self
+
+    def reduce_input(self, input_data):
+        """
+        Uses the reduction matrix computed by `reduce_dim` to transform the
+        given `input_data`. It is an error to call this method if `reduce_dim`
+        was not called.
+        """
+        if len(input_data):
+            X = input_data[:, :-self.history_len]
+            X = X.reshape((-1, self.img_size))
+            reduced = self.pca.transform(X)
+            reduced = reduced.reshape((len(input_data), -1))
+            return np.hstack((reduced, input_data[:, -self.history_len:]))
+        return input_data
+
+    def recover_output(self, output_data):
+        return self.pca.inverse_transform(output_data)
 
     def training_set(self):
         "Return the tuple input, output of the training set"
-        return self.train_input, self.train_output
+        if self.is_split:
+            return self.train_input, self.train_output
+        return self.input_data, self.output_data
 
     def validation_set(self):
         "Return the tuple input, output of the validation set"
-        return self.valid_input, self.valid_output
+        if self.is_split:
+            return self.valid_input, self.valid_output
+        return [], []
 
     def test_set(self):
         "Return the tuple input, output of the test set"
-        return self.test_input, self.test_output
+        if self.is_split:
+            return self.test_input, self.test_output
+        return [], []
 
     @classmethod
     def make(cls, dirpath, hist_len=3, interval=10, future_time=30):
@@ -189,17 +255,10 @@ class DataSet:
             The number of minutes between the latest input image
             and the target image
         """
-        filenames = [os.path.join(dirpath, f) for f in os.listdir(dirpath)]
-        files = map(parse_filename, filenames)
-        #Filter out junk
-        files = [f for f in files if 'error' not in f]
-        imgshape = files[0]['shape']
-        files = [f for f in files if f['shape'] == imgshape]
-        #TODO delay extraction
-        images = ImageSet(map(extract_image, files))
+        images = ImageSet.make(dirpath)
         #Make actual input and output data
         X, y = DataSet.make_datapoints(images, hist_len, interval, future_time)
-        return cls(imgshape, X, y)
+        return cls(images.img_shape, X, y)
 
     def save(self, path):
         """

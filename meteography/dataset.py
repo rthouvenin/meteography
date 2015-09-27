@@ -2,8 +2,8 @@
 """
 Classes and associated helper functions to create and manipulate the data sets
 used in the machine learning machinery
-TODO: export ImageSet as SortedDictCollection?
 TODO: doc and tests
+TODO: log ignored files
 """
 
 import bisect
@@ -232,33 +232,38 @@ class DataSet:
         return [], []
 
     @classmethod
-    def make(cls, dirpath, hist_len=3, interval=10, future_time=30):
+    def make(cls, imageset, hist_len=3, interval=600, future_time=1800,
+             greyscale=False):
         """
-        Build a DataSet from the images located in the directory `dirpath`.
+        Build a DataSet from the images of `imageset`.
 
         The input and target data are built, but not split into training,
-        validation and test sets (use `split` for that). The file names without
-        the extension should be the Epoch when the photo was taken. All the
-        files are attempted to be read, the ones cannot be read as an image
-        or whose time cannot be read are ignored. All the images are expected
-        to have the same dimensions.
+        validation and test sets (use `split` for that). When the source is
+        a directory, the file names without the extension should be the Epoch
+        when the photo was taken.
+        All the files are attempted to be read, the ones cannot be read as
+        an image or whose time cannot be read are ignored.
+        All the images are expected to have the same dimensions.
 
         Parameters
         ----------
-        dirpath : str
-            The directory containing all the source images.
+        imageset : str or ImageSet
+            The directory or ImageSet containing all the source images.
         hist_len : int
             The number of images to include in the input data
         interval : int
-            The number of minutes between each input image
+            The number of seconds between each input image
         future_time : int
-            The number of minutes between the latest input image
+            The number of seconds between the latest input image
             and the target image
+        greyscale : bool
+            Whether to work on greyscale images (True) or color images (False)
         """
-        images = ImageSet.make(dirpath)
+        if not hasattr(imageset, 'find_datapoints'):
+            imageset = ImageSet.make(imageset, greyscale)
         #Make actual input and output data
-        X, y = DataSet.make_datapoints(images, hist_len, interval, future_time)
-        return cls(images.img_shape, X, y)
+        X, y = cls.make_datapoints(imageset, hist_len, interval, future_time)
+        return cls(imageset.img_shape, X, y)
 
     def save(self, path):
         """
@@ -291,6 +296,7 @@ class DataSet:
         """
         with open(path, 'rb') as f:
             dataset = pickle.load(f)
+            #Re-create training, validation and test views on the data
             if dataset.is_split:
                 dataset.__dispatch_data(*dataset.is_split)
             return dataset
@@ -301,9 +307,6 @@ class DataSet:
         Auxiliary method of `DataSet.make` to create the data points from the
         ImageSet `images`.
         """
-        #Convert durations into seconds
-        interval *= 60
-        future_time *= 60
         #Find data points
         data_points = images.find_datapoints(hist_len, interval, future_time)
         #Copy the data into numpy arrays

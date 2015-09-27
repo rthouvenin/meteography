@@ -112,12 +112,12 @@ class ImageSet:
 
 
 class DataSet:
-    def __init__(self, imgshape, indata, outdata):
-        self.img_shape = imgshape
-        self.img_size = np.prod(imgshape)
-        self.history_len = indata.shape[1] / (self.img_size + 1)
+    def __init__(self, img_shape, indata, outdata):
+        self.img_shape = img_shape
         self.input_data = indata
         self.output_data = outdata
+        self.img_size = np.prod(self.img_shape)
+        self.history_len = indata.shape[1] % self.img_size
         self.is_split = False
 
     def input_img(self, i, j):
@@ -140,7 +140,7 @@ class DataSet:
 
     def split(self, train=.7, valid=.15):
         """
-        Split in the examples into a training set, validation set and test set.
+        Split the examples into a training set, validation set and test set.
         The data is shuffled before the split, and the original order is lost.
         The method can be called multiple times to apply multiple shuffles and
         obtain different training/validation/test splits.
@@ -163,7 +163,7 @@ class DataSet:
         train_size = int(full_size * train)
         valid_size = int(full_size * valid)
         self.__dispatch_data(train_size, valid_size)
-        self.is_split = True
+        self.is_split = train_size, valid_size
 
     def __dispatch_data(self, train_size, valid_size, dispatch_output=True):
         #These are views, not copies
@@ -270,7 +270,14 @@ class DataSet:
             the file name. If the file does not exist it is created
         """
         with open(path, 'wb') as f:
-            pickle.dump(self, f)
+            pickle.dump(self, f, pickle.HIGHEST_PROTOCOL)
+
+    def __getstate__(self):
+        odict = self.__dict__.copy()
+        split_keys = ['train_input', 'valid_input', 'test_input',
+                      'train_output', 'valid_output', 'test_output']
+        odict.update(dict.fromkeys(split_keys))
+        return odict
 
     @staticmethod
     def load(path):
@@ -283,7 +290,10 @@ class DataSet:
             the file name
         """
         with open(path, 'rb') as f:
-            pickle.load(f)
+            dataset = pickle.load(f)
+            if dataset.is_split:
+                dataset.__dispatch_data(*dataset.is_split)
+            return dataset
 
     @staticmethod
     def make_datapoints(images, hist_len, interval, future_time):

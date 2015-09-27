@@ -12,11 +12,6 @@ from meteography import analysis
 from meteography.dataset import DataSet
 
 
-def save_comparison(filename):
-    def func(img, cmap):
-        plt.imsave(filename, img, cmap)
-    return func
-
 datapath = os.path.join('..', 'data', 'webcams', 'tinycam')
 resultpath = 'results'
 

@@ -2,7 +2,6 @@
 """
 Classes and associated helper functions to create and manipulate the data sets
 used in the machine learning machinery
-TODO: doc and tests
 TODO: log ignored files
 """
 
@@ -54,18 +53,13 @@ def create_filedict(filename, name_parser=parse_timestamp):
     Open `filename` as an image and read some metadata.
     """
     filedict = {'name': filename}
-    fp = None
     try:
-        #PIL will take care of closing the file when loading the data
-        fp = open(filename, 'rb')
-        img = PIL.Image.open(fp)
-        filedict['pil_img'] = img
-        filedict['shape'] = img.size[1], img.size[0]
-        filedict['time'] = name_parser(filename)
+        with open(filename, 'rb') as fp:
+            img = PIL.Image.open(fp)
+            filedict['shape'] = img.size[1], img.size[0]
+            filedict['time'] = name_parser(filename)
     except Exception as e:
         filedict['error'] = e
-        if fp:
-            fp.close()
     return filedict
 
 
@@ -75,17 +69,17 @@ def extract_image(file_dict, grayscale=False):
     attribute as a flat array with the value of the pixels in [0,1]
     """
     expected_bands = GREY_BANDS if grayscale else COLOR_BANDS
-    bands = file_dict['pil_img'].getbands()
-    img = file_dict['pil_img']
-    if bands != expected_bands:
-        img = img.convert(''.join(expected_bands))
-    raw_data = img.getdata()
+    with open(file_dict['name'], 'rb') as fp:
+        img = PIL.Image.open(fp)
+        bands = img.getbands()
+        if bands != expected_bands:
+            img = img.convert(''.join(expected_bands))
+        raw_data = img.getdata()
     data = np.asarray(raw_data, dtype=np.float32) / MAX_PIXEL_VALUE
     #Flatten the data in case of RGB tuples
     if len(data.shape) > 1:
         data = data.flatten()
     file_dict['data'] = data
-    del file_dict['pil_img']  # release memory blocked by PIL
     if not grayscale:
         file_dict['shape'] += (3, )
     return file_dict

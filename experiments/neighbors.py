@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import logging
 import os
 import os.path
 import time
@@ -9,15 +10,20 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
 from meteography import analysis
+import meteography.dataset
 from meteography.dataset import DataSet
+from meteography.dataset import ImageSet
 
+logging.basicConfig()
+logging.getLogger().setLevel(logging.WARN)
 
-datapath = os.path.join('..', 'data', 'webcams', 'tinycam')
+datapath = os.path.join('..', 'data', 'webcams', 'tinytree')
 resultpath = 'results'
 
 print("Creating the dataset...")
 start_time = time.time()
-dataset = DataSet.make(datapath)
+imageset = ImageSet.make(datapath, name_parser=meteography.dataset.parse_path)
+dataset = DataSet.make(imageset)
 dataset.split(.8, .2)
 expectation = dataset.valid_output  # saving it for later
 dataset.reduce_dim()

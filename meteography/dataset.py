@@ -7,8 +7,11 @@ TODO: log ignored files
 """
 
 import bisect
+from datetime import datetime
+import logging
 import os.path
 import pickle
+import time
 
 import numpy as np
 import PIL
@@ -17,6 +20,73 @@ from sklearn.decomposition import PCA
 MAX_PIXEL_VALUE = 255
 COLOR_BANDS = ('R', 'G', 'B')
 GREY_BANDS = ('L', )
+
+logger = logging.getLogger(__name__)
+
+
+def parse_timestamp(filename):
+    """
+    File name parser when the name without extension is a Unix Epoch
+    """
+    basename = os.path.basename(filename)
+    strtime = basename[:basename.index('.')]
+    return int(strtime)
+
+
+def parse_path(filename):
+    """
+    File name parser when the time data is in the path to the file like so:
+    <basedir>/<year>/<month>/<day>/<hour>-<minute>.<ext>
+    """
+    elems = filename.split(os.path.sep)
+    year = int(elems[-4])
+    month = int(elems[-3])
+    day = int(elems[-2])
+    basename = elems[-1]
+    hour, minute = basename[:basename.index('.')].split('-')
+    date = datetime(year, month, day, int(hour), int(minute))
+    return int(time.mktime(date.timetuple()))
+
+
+def create_filedict(filename, name_parser=parse_timestamp):
+    """
+    Open `filename` as an image and read some metadata.
+    """
+    filedict = {'name': filename}
+    fp = None
+    try:
+        #PIL will take care of closing the file when loading the data
+        fp = open(filename, 'rb')
+        img = PIL.Image.open(fp)
+        filedict['pil_img'] = img
+        filedict['shape'] = img.size[1], img.size[0]
+        filedict['time'] = name_parser(filename)
+    except Exception as e:
+        filedict['error'] = e
+        if fp:
+            fp.close()
+    return filedict
+
+
+def extract_image(file_dict, grayscale=False):
+    """
+    Read the pixels of the image in `filedict` and store them in a 'data'
+    attribute as a flat array with the value of the pixels in [0,1]
+    """
+    expected_bands = GREY_BANDS if grayscale else COLOR_BANDS
+    bands = file_dict['pil_img'].getbands()
+    img = file_dict['pil_img']
+    if bands != expected_bands:
+        img = img.convert(''.join(expected_bands))
+    raw_data = img.getdata()
+    data = np.asarray(raw_data, dtype=np.float32) / MAX_PIXEL_VALUE
+    #Flatten the data in case of RGB tuples
+    if len(data.shape) > 1:
+        data = data.flatten()
+    file_dict['data'] = data
+    if not grayscale:
+        file_dict['shape'] += (3, )
+    return file_dict
 
 
 class ImageSet:
@@ -89,17 +159,51 @@ class ImageSet:
         return data_points
 
     @classmethod
-    def make(cls, dirpath, greyscale=False):
+    def make(cls, dirpath, greyscale=False, name_parser=parse_timestamp,
+             recursive=True):
         """
         Build a ImageSet from the images located in the directory `dirpath`.
+
+        Parameters
+        ----------
+        dirpath : str
+            The source directory
+        greyscale : bool
+            Whether to load greyscale images (True) or color images (False)
+        name_parser : callable
+            A function that takes an absolute filename as argument and
+            returns the timestamp of when the photo was taken
+        recursive : bool
+            Whether to scan the source directory recursively
         """
-        filenames = [os.path.join(dirpath, f) for f in os.listdir(dirpath)]
-        files = map(parse_filename, filenames)
+        files = ImageSet.create_filedicts(dirpath, name_parser, recursive)
         #Filter out junk
-        files = [f for f in files if 'error' not in f]
         imgshape = files[0]['shape']
         files = [f for f in files if f['shape'] == imgshape]
-        return cls(map(lambda f: extract_image(f, greyscale), files))
+        return cls([extract_image(f, greyscale) for f in files])
+
+    @staticmethod
+    def create_filedicts(dirpath, name_parser, recursive=True, filedicts=[]):
+        """
+        Scans a directory and create a dictionary for each image found.
+        The dictionaries are appended to the list `filedicts` (which is also
+        returned)
+        """
+        filenames = os.listdir(dirpath)
+        for f in filenames:
+            fullname = os.path.join(dirpath, f)
+            if os.path.isdir(fullname):
+                if recursive:
+                    ImageSet.create_filedicts(fullname, name_parser,
+                                              True, filedicts)
+            else:
+                filedict = create_filedict(fullname, name_parser)
+                if 'error' in filedict:
+                    logger.warn("Ignoring file %s: %s"
+                                % (fullname, filedict['error']))
+                else:
+                    filedicts.append(filedict)
+        return filedicts
 
     def time(self, i):
         return self.images[i]['time']
@@ -322,46 +426,3 @@ class DataSet:
                 input_data[i, j-hist_len] = target['time'] - img['time']
             output_data[i] = target['data']
         return input_data, output_data
-
-
-def parse_filename(filename):
-    """
-    Open `filename` as an image and read some metadata.
-    """
-    filedict = {'fullpath': filename}
-    fp = None
-    try:
-        #PIL will take care of closing the file when loading the data
-        fp = open(filename, 'rb')
-        img = PIL.Image.open(fp)
-        filedict['pil_img'] = img
-        filedict['shape'] = img.size[1], img.size[0]
-        basename = os.path.basename(filename)
-        strtime = basename[:basename.index('.')]
-        filedict['time'] = int(strtime)
-    except Exception as e:
-        filedict['error'] = e
-        if fp:
-            fp.close()
-    return filedict
-
-
-def extract_image(file_dict, grayscale=False):
-    """
-    Read the pixels of the image in `filedict` and store them in a 'data'
-    attribute as a flat array with the value of the pixels in [0,1]
-    """
-    expected_bands = GREY_BANDS if grayscale else COLOR_BANDS
-    bands = file_dict['pil_img'].getbands()
-    img = file_dict['pil_img']
-    if bands != expected_bands:
-        img = img.convert(''.join(expected_bands))
-    raw_data = img.getdata()
-    data = np.asarray(raw_data, dtype=np.float32) / MAX_PIXEL_VALUE
-    #Flatten the data in case of RGB tuples
-    if len(data.shape) > 1:
-        data = data.flatten()
-    file_dict['data'] = data
-    if not grayscale:
-        file_dict['shape'] += (3, )
-    return file_dict

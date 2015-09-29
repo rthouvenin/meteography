@@ -20,6 +20,7 @@ from sklearn.decomposition import PCA
 MAX_PIXEL_VALUE = 255
 COLOR_BANDS = ('R', 'G', 'B')
 GREY_BANDS = ('L', )
+PIXEL_TYPE = np.float16
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def extract_image(file_dict, grayscale=False):
         if bands != expected_bands:
             img = img.convert(''.join(expected_bands))
         raw_data = img.getdata()
-    data = np.asarray(raw_data, dtype=np.float32) / MAX_PIXEL_VALUE
+    data = np.asarray(raw_data, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
     #Flatten the data in case of RGB tuples
     if len(data.shape) > 1:
         data = data.flatten()
@@ -197,7 +198,8 @@ class ImageSet:
         return self.pca
 
     def recover_images(self, pixels):
-        return self.pca.inverse_transform(pixels)
+        pixels_out = self.pca.inverse_transform(pixels)
+        return pixels_out.clip(0, 1, pixels_out)
 
     def time(self, i):
         return self.images[i]['time']
@@ -256,8 +258,8 @@ class DataSet:
         imgdim = len(images[0]['data'])
         nb_ex = len(data_points)
         nb_feat = (imgdim+1) * hist_len
-        input_data = np.ndarray((nb_ex, nb_feat), dtype=np.float32)
-        output_data = np.ndarray((nb_ex, imgdim), dtype=np.float32)
+        input_data = np.ndarray((nb_ex, nb_feat), dtype=PIXEL_TYPE)
+        output_data = np.ndarray((nb_ex, imgdim), dtype=PIXEL_TYPE)
         for i, data_point in enumerate(data_points):
             example, target = data_point
             for j, img in enumerate(example):

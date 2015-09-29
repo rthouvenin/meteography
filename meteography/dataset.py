@@ -11,6 +11,7 @@ from datetime import datetime
 import logging
 import os.path
 import pickle
+import random
 import time
 
 import numpy as np
@@ -84,6 +85,7 @@ def extract_image(file_dict, grayscale=False):
     if len(data.shape) > 1:
         data = data.flatten()
     file_dict['data'] = data
+    del file_dict['pil_img']  # release memory blocked by PIL
     if not grayscale:
         file_dict['shape'] += (3, )
     return file_dict
@@ -94,36 +96,7 @@ class ImageSet:
         self.images = sorted(images, key=lambda x: x['time'])
         self.times = [i['time'] for i in self.images]
         self.img_shape = images[0]['shape']
-
-    def find_closest(self, start, interval):
-        """
-        Search for the image with its time attribute the closest to
-        `start+interval`, constrained in `]start, start+2*interval]`.
-        This is a binary search in O(log n)
-
-        Return
-        ------
-        The image (a `dict`) or `None` if none is found
-        """
-        assert start >= 0 and interval > 0
-        target = start + interval
-        maxtarget = target + interval
-        idx = bisect.bisect(self.times, start+interval)
-        left_time = self.time(idx-1)  # We know left_time <= target < maxtarget
-        if idx == len(self.times):
-            right_time = maxtarget+1  # unreachable
-        else:
-            right_time = self.time(idx)  # We know right_time > target
-        if target - left_time < right_time - target:
-            if left_time > start:
-                return self.images[idx-1]
-            else:  # At this point we can deduce that right_time > maxtarget
-                return None
-        else:
-            if right_time <= maxtarget:
-                return self.images[idx]
-            else:  # At this point we can deduce that left_time < start
-                return None
+        self.img_size = np.prod(self.img_shape)
 
     @classmethod
     def make(cls, dirpath, greyscale=False, name_parser=parse_timestamp,
@@ -175,6 +148,63 @@ class ImageSet:
                     filedicts.append(filedict)
         return filedicts
 
+    def find_closest(self, start, interval):
+        """
+        Search for the image with its time attribute the closest to
+        `start+interval`, constrained in `]start, start+2*interval]`.
+        This is a binary search in O(log n)
+
+        Return
+        ------
+        The image (a `dict`) or `None` if none is found
+        """
+        assert start >= 0 and interval > 0
+        target = start + interval
+        maxtarget = target + interval
+        idx = bisect.bisect(self.times, start+interval)
+        left_time = self.time(idx-1)  # We know left_time <= target < maxtarget
+        if idx == len(self.times):
+            right_time = maxtarget+1  # unreachable
+        else:
+            right_time = self.time(idx)  # We know right_time > target
+        if target - left_time < right_time - target:
+            if left_time > start:
+                return self.images[idx-1]
+            else:  # At this point we can deduce that right_time > maxtarget
+                return None
+        else:
+            if right_time <= maxtarget:
+                return self.images[idx]
+            else:  # At this point we can deduce that left_time < start
+                return None
+
+    def reduce_dim(self, sample_size=1000):
+        """
+        Apply PCA transformation to each image of the set.
+        """
+        nb_images = len(self.images)
+        if not sample_size:
+            sample_size = nb_images
+        elif 0 < sample_size <= 1:
+            sample_size = int(nb_images * sample_size)
+        else:
+            sample_size = min(nb_images, sample_size)
+        if sample_size == nb_images:
+            sample = self.images
+        else:
+            sample = random.sample(self.images, sample_size)
+        X = np.empty((sample_size, self.img_size))
+        for i, img in enumerate(sample):
+            X[i] = img['data']
+        self.pca = PCA(copy=True).fit(X)
+        for img in self.images:
+            #transform returns a matrix even when given a vector
+            img['data'] = self.pca.transform(img['data'])[0]
+        return self.pca
+
+    def recover_images(self, pixels):
+        return self.pca.inverse_transform(pixels)
+
     def time(self, i):
         return self.images[i]['time']
 
@@ -183,6 +213,9 @@ class ImageSet:
 
     def __iter__(self):
         return iter(self.images)
+
+    def __len__(self):
+        return len(self.images)
 
 
 class DataSet:
@@ -201,7 +234,7 @@ class DataSet:
         self.input_data = indata
         self.output_data = outdata
         self.img_shape = imageset.img_shape
-        self.img_size = np.prod(self.img_shape)
+        self.img_size = imageset.img_size
         self.history_len = indata.shape[1] % self.img_size
         self.is_split = False
 
@@ -226,7 +259,7 @@ class DataSet:
         data_points = DataSet._find_datapoints(images, hist_len, interval,
                                                future_time)
         #Copy the data into numpy arrays
-        imgdim = np.prod(images[0]['shape'])
+        imgdim = len(images[0]['data'])
         nb_ex = len(data_points)
         nb_feat = (imgdim+1) * hist_len
         input_data = np.ndarray((nb_ex, nb_feat), dtype=np.float32)
@@ -335,43 +368,6 @@ class DataSet:
             self.train_output = self.output_data[:train_size]
             self.valid_output = self.output_data[train_size:endvalid]
             self.test_output = self.output_data[train_size+valid_size:]
-
-    def reduce_dim(self, reduce_output=True):
-        """
-        Apply PCA transformation to each input image of the dataset, and to
-        output images as well if `reduce_output` is True.
-        When the dataset was split, the reduction matrix is computed on the
-        training image (but the whole dataset is then reduced).
-        """
-        Xtrain = self.training_set()[0]
-        #Approx. of all training images: the first image of each training input
-        X = Xtrain[:, :self.img_size]
-        self.pca = PCA(copy=True).fit(X)
-        self.input_data = self.reduce_input(self.input_data)
-        if reduce_output:
-            self.output_data = self.pca.transform(self.output_data)
-        if self.is_split:
-            train_size = len(Xtrain)
-            valid_size = len(self.valid_input)
-            self.__dispatch_data(train_size, valid_size, reduce_output)
-        return self
-
-    def reduce_input(self, input_data):
-        """
-        Uses the reduction matrix computed by `reduce_dim` to transform the
-        given `input_data`. It is an error to call this method if `reduce_dim`
-        was not called.
-        """
-        if len(input_data):
-            X = input_data[:, :-self.history_len]
-            X = X.reshape((-1, self.img_size))
-            reduced = self.pca.transform(X)
-            reduced = reduced.reshape((len(input_data), -1))
-            return np.hstack((reduced, input_data[:, -self.history_len:]))
-        return input_data
-
-    def recover_output(self, output_data):
-        return self.pca.inverse_transform(output_data)
 
     def training_set(self):
         "Return the tuple input, output of the training set"

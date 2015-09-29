@@ -23,7 +23,7 @@ def imageset():
     return ImageSet(images)
 
 
-@pytest.fixture(scope='class')
+@pytest.fixture
 def bigimageset():
     random.seed(42)  # Reproducible tests
     images = [make_filedict(t, True) for t in range(6000, 12000, 60)]
@@ -72,17 +72,23 @@ class TestImageSet:
         "The closest match is greater than the target but not acceptable"
         self.helper_closest_nomatch(imageset, 4000, 50)
 
+    def test_reduce_fewimg(self, bigimageset):
+        "More pixels than images"
+        bigimageset.reduce_dim()
+        img0 = bigimageset[0]
+        assert(len(img0['data']) <= len(bigimageset))
+
 
 class TestDataSet:
     #Using a class scope, we also check that calling split multiple times
     #is not affected by previous splits
     @staticmethod
-    @pytest.fixture(scope='class')
+    @pytest.fixture
     def dataset(bigimageset):
         return DataSet.make(bigimageset, 5, 60, 120)
 
     @staticmethod
-    @pytest.fixture(scope='function')
+    @pytest.fixture
     def freshdataset(bigimageset):
         return DataSet.make(bigimageset, 5, 60, 120)
 
@@ -97,6 +103,11 @@ class TestDataSet:
     def check_width(self, dataset, max_size):
         assert(dataset.input_data.shape[1] <= (max_size+1)*dataset.history_len)
         assert(dataset.output_data.shape[1] <= max_size)
+
+    def test_make_reducedset(self, bigimageset):
+        bigimageset.reduce_dim()
+        dataset = DataSet.make(bigimageset, 5, 60, 120)
+        assert(dataset.output_data.shape[1] == len(bigimageset[0]['data']))
 
     def test_finddatapoints(self, bigimageset):
         "The list of data points should have the expected dimensions"
@@ -122,26 +133,3 @@ class TestDataSet:
         assert(len(dataset.input_data) == 95)
         dataset.split(.8, .2)
         self.check_length(dataset, 76, 19, 0)
-
-    def test_reducedim_notsplit(self, freshdataset):
-        """The matrix is wider than long, so the number of components will be
-        less than the initial length"""
-        init_len = len(freshdataset.input_data)
-        freshdataset.reduce_dim()
-        self.check_width(freshdataset, init_len)
-
-    def test_reducedim_split(self, freshdataset):
-        "Reducing should keep the split ratios"
-        freshdataset.split()
-        init_len = len(freshdataset.input_data)
-        freshdataset.reduce_dim()
-        self.check_width(freshdataset, init_len)
-        self.check_length(freshdataset, 66, 14, 15)
-
-    def test_reducedim_keepoutput(self, freshdataset):
-        "The output data should be kept when required with `reduce_output`"
-        hist_len = freshdataset.history_len
-        init_len = len(freshdataset.input_data)
-        freshdataset.reduce_dim(reduce_output=False)
-        assert(freshdataset.input_data.shape[1] <= (init_len+1)*hist_len)
-        assert(freshdataset.output_data.shape[1] == freshdataset.img_size)

@@ -72,19 +72,6 @@ class TestImageSet:
         "The closest match is greater than the target but not acceptable"
         self.helper_closest_nomatch(imageset, 4000, 50)
 
-    def test_datapoints(self, bigimageset):
-        "The list of data points should have the expected dimensions"
-        interval, pred_time = 60, 120
-        data_points = bigimageset.find_datapoints(5, interval, pred_time)
-        # (max - future_time - (hist_len - 1)*interval - min) / step + 1
-        # = (2000 - 20 - 4*10 - 1000) / 10 + 1 = 95
-        assert(len(data_points) == 95)
-        X, y = random.choice(data_points)
-        assert(len(X) == 5)
-        intervals = [X[i+1]['time'] - X[i]['time'] for i in range(len(X)-1)]
-        assert(min(intervals) <= 2*interval)
-        assert(y['time'] - X[-1]['time'] <= 2*pred_time)
-
 
 class TestDataSet:
     #Using a class scope, we also check that calling split multiple times
@@ -110,6 +97,20 @@ class TestDataSet:
     def check_width(self, dataset, max_size):
         assert(dataset.input_data.shape[1] <= (max_size+1)*dataset.history_len)
         assert(dataset.output_data.shape[1] <= max_size)
+
+    def test_finddatapoints(self, bigimageset):
+        "The list of data points should have the expected dimensions"
+        interval, pred_time = 60, 120
+        data_points = DataSet._find_datapoints(bigimageset, 5, interval,
+                                               pred_time)
+        # (max - future_time - (hist_len - 1)*interval - min) / step + 1
+        # = (2000 - 20 - 4*10 - 1000) / 10 + 1 = 95
+        assert(len(data_points) == 95)
+        X, y = random.choice(data_points)
+        assert(len(X) == 5)
+        intervals = [X[i+1]['time'] - X[i]['time'] for i in range(len(X)-1)]
+        assert(min(intervals) <= 2*interval)
+        assert(y['time'] - X[-1]['time'] <= 2*pred_time)
 
     def test_split_60_30(self, dataset):
         "default = 70% (66.5) training, 15% (14.25) validation, 15% test"

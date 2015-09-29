@@ -91,7 +91,6 @@ def extract_image(file_dict, grayscale=False):
 
 class ImageSet:
     def __init__(self, images):
-        assert images
         self.images = sorted(images, key=lambda x: x['time'])
         self.times = [i['time'] for i in self.images]
         self.img_shape = images[0]['shape']
@@ -126,43 +125,14 @@ class ImageSet:
             else:  # At this point we can deduce that left_time < start
                 return None
 
-    def find_datapoints(self, hist_len, interval, future_time):
-        """
-        Build a list of tuples (input_images, output_value).
-
-        Parameters
-        ----------
-        hist_len : int (strictly greater than 0)
-            The number of input images in each data point
-        interval : int (strictly greater than 0)
-            The approximate (+/- 100%) time interval between each input image
-        future_time : int (strictly greater than 0)
-            The approximate (+/- 100%) time interval between the last input
-            image and the output value
-        """
-        assert hist_len > 0 and interval > 0 and future_time > 0
-        data_points = []
-        for i, img in enumerate(self):
-            images_i = [img]
-            for j in range(1, hist_len):
-                prev_time = images_i[j-1]['time']
-                img_j = self.find_closest(prev_time, interval)
-                if img_j:
-                    images_i.append(img_j)
-                else:
-                    break
-            if len(images_i) == hist_len:
-                latest_time = images_i[-1]['time']
-                target = self.find_closest(latest_time, future_time)
-                if target:
-                    data_points.append((images_i, target))
-        return data_points
-
     @classmethod
     def make(cls, dirpath, greyscale=False, name_parser=parse_timestamp,
              recursive=True):
         """
         Build a ImageSet from the images located in the directory `dirpath`.
+        All the files are attempted to be read, the ones that cannot be read as
+        an image or whose time cannot be read are ignored.
+        All the images are expected to have the same dimensions.
 
         Parameters
         ----------
@@ -216,13 +186,99 @@ class ImageSet:
 
 
 class DataSet:
-    def __init__(self, img_shape, indata, outdata):
-        self.img_shape = img_shape
+    def __init__(self, imageset, indata, outdata):
+        """
+        Build a DataSet from the images of `imageset`.
+        The input and target data are built, but not split into training,
+        validation and test sets (use `split` for that).
+
+        Parameters
+        ----------
+        imageset : ImageSet
+            The ImageSet containing all the source images.
+        """
+        self.imgset = imageset
         self.input_data = indata
         self.output_data = outdata
+        self.img_shape = imageset.img_shape
         self.img_size = np.prod(self.img_shape)
         self.history_len = indata.shape[1] % self.img_size
         self.is_split = False
+
+    @classmethod
+    def make(cls, images, hist_len=3, interval=600, future_time=1800):
+        """
+        Constructs a DataSet from the ImageSet `images`.
+
+        Parameters
+        ----------
+        imageset : ImageSet
+            The ImageSet containing all the source images.
+        hist_len : int
+            The number of images to include in the input data
+        interval : int
+            The number of seconds between each input image
+        future_time : int
+            The number of seconds between the latest input image
+            and the target image
+        """
+        #Find the representations of the data points
+        data_points = DataSet._find_datapoints(images, hist_len, interval,
+                                               future_time)
+        #Copy the data into numpy arrays
+        imgdim = np.prod(images[0]['shape'])
+        nb_ex = len(data_points)
+        nb_feat = (imgdim+1) * hist_len
+        input_data = np.ndarray((nb_ex, nb_feat), dtype=np.float32)
+        output_data = np.ndarray((nb_ex, imgdim), dtype=np.float32)
+        for i, data_point in enumerate(data_points):
+            example, target = data_point
+            for j, img in enumerate(example):
+                input_data[i, imgdim*j:imgdim*(j+1)] = img['data']
+                input_data[i, j-hist_len] = target['time'] - img['time']
+            output_data[i] = target['data']
+        return cls(images, input_data, output_data)
+
+    @staticmethod
+    def _find_datapoints(imgset, hist_len, interval, future_time):
+        """
+        Build a list of tuples (input_images, output_value) to be used for
+        training or validation.
+
+        Parameters
+        ----------
+        hist_len : int (strictly greater than 0)
+            The number of input images in each data point
+        interval : int (strictly greater than 0)
+            The approximate (+/- 100%) time interval between each input image
+        future_time : int (strictly greater than 0)
+            The approximate (+/- 100%) time interval between the last input
+            image and the output value
+
+        Returns
+        -------
+        list(tuple(list(filedict), filedict)) : a list of tuples
+            (input_images, output_value) where input_images is a list of images
+            to be used as the input of an example, and output_value is the
+            output (expected prediction) of the example
+        """
+        assert hist_len > 0 and interval > 0 and future_time > 0
+        data_points = []
+        for i, img in enumerate(imgset):
+            images_i = [img]
+            for j in range(1, hist_len):
+                prev_time = images_i[j-1]['time']
+                img_j = imgset.find_closest(prev_time, interval)
+                if img_j:
+                    images_i.append(img_j)
+                else:
+                    break
+            if len(images_i) == hist_len:
+                latest_time = images_i[-1]['time']
+                target = imgset.find_closest(latest_time, future_time)
+                if target:
+                    data_points.append((images_i, target))
+        return data_points
 
     def input_img(self, i, j):
         """
@@ -335,40 +391,6 @@ class DataSet:
             return self.test_input, self.test_output
         return [], []
 
-    @classmethod
-    def make(cls, imageset, hist_len=3, interval=600, future_time=1800,
-             greyscale=False):
-        """
-        Build a DataSet from the images of `imageset`.
-
-        The input and target data are built, but not split into training,
-        validation and test sets (use `split` for that). When the source is
-        a directory, the file names without the extension should be the Epoch
-        when the photo was taken.
-        All the files are attempted to be read, the ones cannot be read as
-        an image or whose time cannot be read are ignored.
-        All the images are expected to have the same dimensions.
-
-        Parameters
-        ----------
-        imageset : str or ImageSet
-            The directory or ImageSet containing all the source images.
-        hist_len : int
-            The number of images to include in the input data
-        interval : int
-            The number of seconds between each input image
-        future_time : int
-            The number of seconds between the latest input image
-            and the target image
-        greyscale : bool
-            Whether to work on greyscale images (True) or color images (False)
-        """
-        if not hasattr(imageset, 'find_datapoints'):
-            imageset = ImageSet.make(imageset, greyscale)
-        #Make actual input and output data
-        X, y = cls.make_datapoints(imageset, hist_len, interval, future_time)
-        return cls(imageset.img_shape, X, y)
-
     def save(self, path):
         """
         Save this DataSet in a file.
@@ -404,25 +426,3 @@ class DataSet:
             if dataset.is_split:
                 dataset.__dispatch_data(*dataset.is_split)
             return dataset
-
-    @staticmethod
-    def make_datapoints(images, hist_len, interval, future_time):
-        """
-        Auxiliary method of `DataSet.make` to create the data points from the
-        ImageSet `images`.
-        """
-        #Find data points
-        data_points = images.find_datapoints(hist_len, interval, future_time)
-        #Copy the data into numpy arrays
-        imgdim = np.prod(images[0]['shape'])
-        nb_ex = len(data_points)
-        nb_feat = (imgdim+1) * hist_len
-        input_data = np.ndarray((nb_ex, nb_feat), dtype=np.float32)
-        output_data = np.ndarray((nb_ex, imgdim), dtype=np.float32)
-        for i, data_point in enumerate(data_points):
-            example, target = data_point
-            for j, img in enumerate(example):
-                input_data[i, imgdim*j:imgdim*(j+1)] = img['data']
-                input_data[i, j-hist_len] = target['time'] - img['time']
-            output_data[i] = target['data']
-        return input_data, output_data

@@ -16,6 +16,7 @@ import time
 import numpy as np
 import PIL
 from sklearn.decomposition import PCA
+import tables
 
 MAX_PIXEL_VALUE = 255
 COLOR_BANDS = ('R', 'G', 'B')
@@ -23,6 +24,55 @@ GREY_BANDS = ('L', )
 PIXEL_TYPE = np.float16
 
 logger = logging.getLogger(__name__)
+
+
+def image_descriptor(img_size):
+    """
+    Create a pytables descriptor for the table of images.
+
+    Parameters
+    ----------
+    img_size : int
+        The number of pixels multiplied by the number of bands
+    """
+    return {
+        'name': tables.StringCol(256),
+        'time': tables.UIntCol(),
+        'pixels': tables.Col.from_sctype(PIXEL_TYPE, img_size)
+    }
+
+
+def create_imagetable(thefile, img_shape):
+    """
+    Create in `thefile` a table of images of shape `img_shape`. The table is
+    named 'imgset' and created in a group named 'images'
+
+    Parameters
+    ----------
+    thefile : str or pytables file descriptor
+        The name of the file to create / open, or a file descriptor already
+        opened.
+    img_shape : tuple
+        The shape of the images: (height, width[, bands])
+
+    Returns
+    -------
+    tuple : The file descriptor (still opened) and the created table
+    """
+    if not hasattr(thefile, 'create_table'):
+        fp = tables.open_file(thefile, mode='w')
+    else:
+        fp = thefile
+    try:
+        desc = image_descriptor(np.prod(img_shape))
+        table = fp.create_table('/images', 'imgset', desc, createparents=True)
+        table.attrs.img_shape = img_shape
+    except Exception as e:
+        #Avoid an orphan open file in case of a problem
+        if fp is not thefile:
+            fp.close()
+        raise e
+    return fp, table
 
 
 def parse_timestamp(filename):

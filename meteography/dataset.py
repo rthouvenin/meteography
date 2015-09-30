@@ -2,7 +2,6 @@
 """
 Classes and associated helper functions to create and manipulate the data sets
 used in the machine learning machinery
-TODO: log ignored files
 """
 
 import bisect
@@ -101,10 +100,11 @@ def parse_path(filename):
 
 
 class ImageSet:
-    def __init__(self, imggroup):
-        self.group = imggroup
-        self.table = imggroup.imgset
+    def __init__(self, fileh):
+        self.fileh = fileh
+        self.table = fileh.get_node('/images/imgset')
         self.img_shape = self.table.attrs.img_shape
+        self.img_size = np.prod(self.img_shape)
         self.is_grey = len(self.img_shape) == 2
 
     def _add_image(self, imgfile, name_parser):
@@ -177,6 +177,46 @@ class ImageSet:
             else:
                 self._add_image(fullname, name_parser)
         self.table.flush()
+
+    def _sample(self, sample_size):
+        if sample_size == self.table.nrows:
+            sample = self.table.cols.pixels[:]
+        else:
+            index = random.sample(xrange(self.table.nrows), sample_size)
+            sample = np.empty((sample_size, self.img_size), dtype=PIXEL_TYPE)
+            for i, img in enumerate(self.table.itersequence(index)):
+                sample[i] = img['pixels']
+        return sample
+
+    def reduce_dim(self, sample_size=1000):
+        """
+        Apply PCA transformation to each image of the set.
+        """
+        nb_images = self.table.nrows
+        if not sample_size:
+            sample_size = nb_images
+        elif 0 < sample_size <= 1:
+            sample_size = int(nb_images * sample_size)
+        else:
+            sample_size = min(nb_images, sample_size)
+        #Compute PCA components and save them
+        sample = self._sample(sample_size)
+        self.pca = PCA().fit(sample)
+        components = self.pca.components_
+        self.fileh.create_array('/images', 'pcacomponents', components)
+        #Apply PCA transformation to all the images in chunks
+        new_dim = components.shape[0]
+        pixels = self.table.cols.pixels
+        pca_pixels = self.fileh.create_array('/images', 'pcapixels',
+                                             shape=(nb_images, new_dim),
+                                             atom=tables.FloatAtom())
+        chunk_size = sample_size
+        nb_chunks = nb_images / chunk_size
+        for c in range(nb_chunks):
+            s = c * chunk_size
+            e = min(nb_images, s + chunk_size)
+            pca_pixels[s:e] = self.pca.transform(pixels[s:e])
+            pca_pixels.flush()
 
 
 def create_filedict(filename, name_parser=parse_timestamp):
@@ -263,7 +303,7 @@ class ImageSet2:
             if os.path.isdir(fullname):
                 if recursive:
                     ImageSet2.create_filedicts(fullname, name_parser,
-                                              True, filedicts)
+                                               True, filedicts)
             else:
                 filedict = create_filedict(fullname, name_parser)
                 if 'error' in filedict:

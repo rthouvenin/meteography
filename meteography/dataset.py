@@ -42,10 +42,10 @@ def image_descriptor(img_size):
     }
 
 
-def create_imagetable(thefile, img_shape):
+def create_imagegroup(thefile, img_shape):
     """
-    Create in `thefile` a table of images of shape `img_shape`. The table is
-    named 'imgset' and created in a group named 'images'
+    Create in `thefile` a pytables group 'images' to be used for image data.
+    Create in the group a table of images of shape `img_shape` named 'images'.
 
     Parameters
     ----------
@@ -57,7 +57,7 @@ def create_imagetable(thefile, img_shape):
 
     Returns
     -------
-    tuple : The file descriptor (still opened) and the created table
+    tuple : The file descriptor (still opened) and the created group
     """
     if not hasattr(thefile, 'create_table'):
         fp = tables.open_file(thefile, mode='w')
@@ -65,14 +65,15 @@ def create_imagetable(thefile, img_shape):
         fp = thefile
     try:
         desc = image_descriptor(np.prod(img_shape))
-        table = fp.create_table('/images', 'imgset', desc, createparents=True)
+        group = fp.create_group('/', 'images')
+        table = fp.create_table(group, 'imgset', desc)
         table.attrs.img_shape = img_shape
     except Exception as e:
         #Avoid an orphan open file in case of a problem
         if fp is not thefile:
             fp.close()
         raise e
-    return fp, table
+    return fp, group
 
 
 def parse_timestamp(filename):
@@ -97,6 +98,85 @@ def parse_path(filename):
     hour, minute = basename[:basename.index('.')].split('-')
     date = datetime(year, month, day, int(hour), int(minute))
     return int(time.mktime(date.timetuple()))
+
+
+class ImageSet:
+    def __init__(self, imggroup):
+        self.group = imggroup
+        self.table = imggroup.imgset
+        self.img_shape = self.table.attrs.img_shape
+        self.is_grey = len(self.img_shape) == 2
+
+    def _add_image(self, imgfile, name_parser):
+        """
+        `add_image` without flushing the table.
+        """
+        try:
+            with open(imgfile, 'rb') as fp:
+                img = PIL.Image.open(fp)
+                img_shape = img.size[1], img.size[0]
+                if img_shape != self.img_shape[:2]:
+                    raise ValueError("The image has shape %s instead of %s"
+                                     % (img_shape, self.img_shape[:2]))
+                #Convert the image to greyscale or RGB if necessary
+                expected_bands = GREY_BANDS if self.is_grey else COLOR_BANDS
+                img_bands = img.getbands()
+                if img_bands != expected_bands:
+                    img = img.convert(''.join(expected_bands))
+                raw_data = img.getdata()
+
+            data = np.asarray(raw_data, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
+            #Flatten the data in case of RGB tuples
+            if data.ndim > 1:
+                data = data.flatten()
+            img_time = name_parser(imgfile)
+            row = self.table.row
+            row['name'] = imgfile
+            row['time'] = img_time
+            row['pixels'] = data
+            row.append()
+        except Exception as e:
+            logger.warn("Ignoring file %s: %s" % (imgfile, e))
+
+    def add_image(self, imgfile, name_parser=parse_timestamp):
+        """
+        Add an image to the set.
+
+        Parameters
+        ----------
+        imgfile : str
+            The file name of the image
+        name_parser : callable
+            A function that takes an absolute filename as argument and
+            returns the timestamp of when the photo was taken
+        """
+        self._add_image(imgfile, name_parser)
+        self.table.flush()
+
+    def add_images(self, directory, name_parser=parse_timestamp,
+                   recursive=True):
+        """
+        Add the images of a directory to the set
+
+        Parameters
+        ----------
+        directory : str
+            The path of the directory
+        name_parser : callable
+            A function that takes an absolute filename as argument and
+            returns the timestamp of when the photo was taken
+        recursive : bool
+            Whether to scan the sub-directories recursively
+        """
+        filenames = os.listdir(directory)
+        for f in filenames:
+            fullname = os.path.join(directory, f)
+            if os.path.isdir(fullname):
+                if recursive:
+                    self.add_images(fullname, name_parser)
+            else:
+                self._add_image(fullname, name_parser)
+        self.table.flush()
 
 
 def create_filedict(filename, name_parser=parse_timestamp):
@@ -136,7 +216,7 @@ def extract_image(file_dict, grayscale=False):
     return file_dict
 
 
-class ImageSet:
+class ImageSet2:
     def __init__(self, images):
         self.images = sorted(images, key=lambda x: x['time'])
         self.times = [i['time'] for i in self.images]
@@ -164,7 +244,7 @@ class ImageSet:
         recursive : bool
             Whether to scan the source directory recursively
         """
-        files = ImageSet.create_filedicts(dirpath, name_parser, recursive)
+        files = ImageSet2.create_filedicts(dirpath, name_parser, recursive)
         #Filter out junk
         imgshape = files[0]['shape']
         files = [f for f in files if f['shape'] == imgshape]
@@ -182,7 +262,7 @@ class ImageSet:
             fullname = os.path.join(dirpath, f)
             if os.path.isdir(fullname):
                 if recursive:
-                    ImageSet.create_filedicts(fullname, name_parser,
+                    ImageSet2.create_filedicts(fullname, name_parser,
                                               True, filedicts)
             else:
                 filedict = create_filedict(fullname, name_parser)

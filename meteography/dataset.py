@@ -15,6 +15,7 @@ import time
 import numpy as np
 import PIL
 from sklearn.decomposition import PCA
+from sklearn.decomposition import TruncatedSVD
 import tables
 
 MAX_PIXEL_VALUE = 255
@@ -123,9 +124,7 @@ class ImageSet:
                 img_bands = img.getbands()
                 if img_bands != expected_bands:
                     img = img.convert(''.join(expected_bands))
-                raw_data = img.getdata()
-
-            data = np.asarray(raw_data, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
+                data = np.array(img, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
             #Flatten the data in case of RGB tuples
             if data.ndim > 1:
                 data = data.flatten()
@@ -199,11 +198,14 @@ class ImageSet:
             sample_size = int(nb_images * sample_size)
         else:
             sample_size = min(nb_images, sample_size)
+
         #Compute PCA components and save them
         sample = self._sample(sample_size)
-        self.pca = PCA().fit(sample)
+        ##self.pca = PCA().fit(sample)
+        self.pca = TruncatedSVD(300).fit(sample)  # FIXME: choose an algo
         components = self.pca.components_
         self.fileh.create_array('/images', 'pcacomponents', components)
+
         #Apply PCA transformation to all the images in chunks
         new_dim = components.shape[0]
         pixels = self.table.cols.pixels
@@ -588,3 +590,10 @@ class DataSet:
             if dataset.is_split:
                 dataset.__dispatch_data(*dataset.is_split)
             return dataset
+
+#logging.basicConfig()
+#fp, group = create_imagegroup('/home/romain/tmp/temp.h5', (80, 117, 3))
+#imgset = ImageSet(fp)
+#imgset.add_images('/home/romain/prog/meteography/data/webcams/tinycam')
+#imgset.reduce_dim()
+#fp.close()

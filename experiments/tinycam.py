@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from meteography import analysis
+from meteography import dataset
 from meteography.dataset import DataSet
 from meteography.dataset import ImageSet
 from meteography.perceptron import Perceptron
@@ -24,7 +25,9 @@ logging.getLogger().setLevel(logging.ERROR)
 
 datapath = os.path.join('..', 'data', 'webcams', 'tinycam')
 
-imageset = ImageSet.make(datapath, greyscale=True)
+fp = dataset.create_imagegroup('/home/romain/tmp/temp.h5', (80, 117, 3))
+imageset = ImageSet(fp)
+imageset.add_images(datapath)
 dataset = DataSet.make(imageset, interval=1800)
 insize = dataset.input_data.shape[1]
 outsize = dataset.output_data.shape[1]

@@ -57,7 +57,7 @@ def create_imagegroup(thefile, img_shape):
 
     Returns
     -------
-    tuple : The file descriptor (still opened) and the created group
+    The file descriptor (still opened)
     """
     if not hasattr(thefile, 'create_table'):
         fp = tables.open_file(thefile, mode='w')
@@ -68,12 +68,13 @@ def create_imagegroup(thefile, img_shape):
         group = fp.create_group('/', 'images')
         table = fp.create_table(group, 'imgset', desc)
         table.attrs.img_shape = img_shape
+        table.cols.time.create_csindex()
     except Exception as e:
         #Avoid an orphan open file in case of a problem
         if fp is not thefile:
             fp.close()
         raise e
-    return fp, group
+    return fp
 
 
 def parse_timestamp(filename):
@@ -102,11 +103,77 @@ def parse_path(filename):
 
 class ImageSet:
     def __init__(self, fileh):
+        """
+        An ImageSet is a container for the complete list of webcam snapshots
+        that can be used to train the learner. It is backed by a HDF5 file.
+
+        Parameters
+        ----------
+        fileh : pytables file descriptor
+            An opened file descriptor pointing to a HDF5 file. The file must
+            already contain the required nodes, they can be created with the
+            function `create_imagegroup`.
+
+        Attributes
+        ----------
+        img_shape : tuple
+            The shape of the images: (height, width[, bands])
+        img_size : int
+            The number of pixels in a single image. When the dimension is not
+            reduced (see `reduce_dim`), this is the product of width, height
+            and number of bands.
+            When reduced, this is the reduced dimension.
+        is_grey : bool
+            True if the images are processed as greyscale images
+        """
         self.fileh = fileh
         self.table = fileh.get_node('/images/imgset')
         self.img_shape = self.table.attrs.img_shape
         self.img_size = np.prod(self.img_shape)
         self.is_grey = len(self.img_shape) == 2
+        self._times = None
+        self.pca = None
+
+    def _img_from_row(self, row, reduced=True):
+        """
+        Create from a row a dictionary with the details of the image in that
+        row. If `reduced` is True and the ImageSet was reduced, the key 'data'
+        will contain the PCA-transformed data.
+        """
+        if reduced and self.pca is not None:
+            pca_pixels = self.fileh.get_node('/images/pcapixels')
+            pixels = pca_pixels[row.nrow]
+        else:
+            pixels = row['pixels']
+        return {
+            'name': row['name'],
+            'time': row['time'],
+            'data': pixels
+        }
+
+    def get_image(self, t, reduced=True):
+        """
+        Returns as a dictionary the details of the image taken at time `t`.
+        If `reduced` is True and the ImageSet was reduced, the key 'data'
+        will contain the PCA-transformed data.
+        """
+        rows = self.table.where('time == ' + str(t))
+        row = next(rows, None)
+        if row:
+            return self._img_from_row(row, reduced)
+        return None
+
+    def __iter__(self):
+        """
+        Create a generator on the images, returned as dictionaries.
+        """
+        rows = self.table.iterrows()
+        for row in rows:
+            yield self._img_from_row(row)
+
+    def __len__(self):
+        """Return the number of images in the set."""
+        return len(self.table.nrows)
 
     def _add_image(self, imgfile, name_parser):
         """
@@ -134,6 +201,7 @@ class ImageSet:
             row['time'] = img_time
             row['pixels'] = data
             row.append()
+            self._times = None  # invalidate times cache
         except Exception as e:
             logger.warn("Ignoring file %s: %s" % (imgfile, e))
 
@@ -177,7 +245,19 @@ class ImageSet:
                 self._add_image(fullname, name_parser)
         self.table.flush()
 
+#    def sort(self): Requires pcapixels sorting as well
+#        newtable = self.table.copy(newname='sortedimgset', sortby='time')
+#        self.table.remove()
+#        newtable.rename('imgset')
+#        self.table = newtable
+#        self.fileh.flush()
+#        self.sorted = True
+
     def _sample(self, sample_size):
+        """
+        Pick randomly `sample_size` images and return their pixels as a single
+        ndarray of shape (`sample_size`, `img_size`).
+        """
         if sample_size == self.table.nrows:
             sample = self.table.cols.pixels[:]
         else:
@@ -190,6 +270,15 @@ class ImageSet:
     def reduce_dim(self, sample_size=1000):
         """
         Apply PCA transformation to each image of the set.
+
+        Parameters
+        ----------
+        sample_size : number or None
+            Indicates how many images should be used to compute the PCA
+            reduction. If 0 or None, all the images of the set are used. If it
+            is a float in ]0, 1], it indicates the proportion of images to be
+            used. If greater than 1, it indicates the maximum number of images
+            to use.
         """
         nb_images = self.table.nrows
         if not sample_size:
@@ -201,16 +290,16 @@ class ImageSet:
 
         #Compute PCA components and save them
         sample = self._sample(sample_size)
-        ##self.pca = PCA().fit(sample)
-        self.pca = TruncatedSVD(300).fit(sample)  # FIXME: choose an algo
+        self.pca = PCA().fit(sample) # FIXME: choose an algo
+        ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
         components = self.pca.components_
         self.fileh.create_array('/images', 'pcacomponents', components)
 
         #Apply PCA transformation to all the images in chunks
-        new_dim = components.shape[0]
+        self.img_size = components.shape[0]
         pixels = self.table.cols.pixels
         pca_pixels = self.fileh.create_array('/images', 'pcapixels',
-                                             shape=(nb_images, new_dim),
+                                             shape=(nb_images, self.img_size),
                                              atom=tables.FloatAtom())
         chunk_size = sample_size
         nb_chunks = nb_images / chunk_size
@@ -220,106 +309,22 @@ class ImageSet:
             pca_pixels[s:e] = self.pca.transform(pixels[s:e])
             pca_pixels.flush()
 
-
-def create_filedict(filename, name_parser=parse_timestamp):
-    """
-    Open `filename` as an image and read some metadata.
-    """
-    filedict = {'name': filename}
-    try:
-        with open(filename, 'rb') as fp:
-            img = PIL.Image.open(fp)
-            filedict['shape'] = img.size[1], img.size[0]
-            filedict['time'] = name_parser(filename)
-    except Exception as e:
-        filedict['error'] = e
-    return filedict
-
-
-def extract_image(file_dict, grayscale=False):
-    """
-    Read the pixels of the image in `filedict` and store them in a 'data'
-    attribute as a flat array with the value of the pixels in [0,1]
-    """
-    expected_bands = GREY_BANDS if grayscale else COLOR_BANDS
-    with open(file_dict['name'], 'rb') as fp:
-        img = PIL.Image.open(fp)
-        bands = img.getbands()
-        if bands != expected_bands:
-            img = img.convert(''.join(expected_bands))
-        raw_data = img.getdata()
-    data = np.asarray(raw_data, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
-    #Flatten the data in case of RGB tuples
-    if len(data.shape) > 1:
-        data = data.flatten()
-    file_dict['data'] = data
-    if not grayscale:
-        file_dict['shape'] += (3, )
-    return file_dict
-
-
-class ImageSet2:
-    def __init__(self, images):
-        self.images = sorted(images, key=lambda x: x['time'])
-        self.times = [i['time'] for i in self.images]
-        self.img_shape = images[0]['shape']
-        self.img_size = np.prod(self.img_shape)
-
-    @classmethod
-    def make(cls, dirpath, greyscale=False, name_parser=parse_timestamp,
-             recursive=True):
+    def recover_images(self, pca_pixels):
         """
-        Build a ImageSet from the images located in the directory `dirpath`.
-        All the files are attempted to be read, the ones that cannot be read as
-        an image or whose time cannot be read are ignored.
-        All the images are expected to have the same dimensions.
+        Appy inverse PCA transformation to the given transformed data.
 
         Parameters
         ----------
-        dirpath : str
-            The source directory
-        greyscale : bool
-            Whether to load greyscale images (True) or color images (False)
-        name_parser : callable
-            A function that takes an absolute filename as argument and
-            returns the timestamp of when the photo was taken
-        recursive : bool
-            Whether to scan the source directory recursively
+        pca_pixels : array
         """
-        files = ImageSet2.create_filedicts(dirpath, name_parser, recursive)
-        #Filter out junk
-        imgshape = files[0]['shape']
-        files = [f for f in files if f['shape'] == imgshape]
-        return cls([extract_image(f, greyscale) for f in files])
-
-    @staticmethod
-    def create_filedicts(dirpath, name_parser, recursive=True, filedicts=[]):
-        """
-        Scans a directory and create a dictionary for each image found.
-        The dictionaries are appended to the list `filedicts` (which is also
-        returned)
-        """
-        filenames = os.listdir(dirpath)
-        for f in filenames:
-            fullname = os.path.join(dirpath, f)
-            if os.path.isdir(fullname):
-                if recursive:
-                    ImageSet2.create_filedicts(fullname, name_parser,
-                                               True, filedicts)
-            else:
-                filedict = create_filedict(fullname, name_parser)
-                if 'error' in filedict:
-                    logger.warn("Ignoring file %s: %s"
-                                % (fullname, filedict['error']))
-                else:
-                    filedicts.append(filedict)
-        return filedicts
+        pixels_out = self.pca.inverse_transform(pca_pixels)
+        return pixels_out.clip(0, 1, pixels_out)
 
     def find_closest(self, start, interval):
         """
         Search for the image with its time attribute the closest to
         `start+interval`, constrained in `]start, start+2*interval]`.
-        This is a binary search in O(log n)
+        This is a binary search in O(log n), except the first time it is called
 
         Return
         ------
@@ -328,62 +333,27 @@ class ImageSet2:
         assert start >= 0 and interval > 0
         target = start + interval
         maxtarget = target + interval
-        idx = bisect.bisect(self.times, start+interval)
-        left_time = self.time(idx-1)  # We know left_time <= target < maxtarget
-        if idx == len(self.times):
+        if self._times is None:
+            self._times = self.table.cols.time[:]
+            self._times.sort()
+
+        idx = bisect.bisect(self._times, start+interval)
+        left_time = self._times[idx-1]  # left_time <= target < maxtarget
+        if idx == len(self._times):
             right_time = maxtarget+1  # unreachable
         else:
-            right_time = self.time(idx)  # We know right_time > target
+            right_time = self._times[idx]  # right_time > target
+
         if target - left_time < right_time - target:
             if left_time > start:
-                return self.images[idx-1]
+                return self.get_image(left_time)
             else:  # At this point we can deduce that right_time > maxtarget
                 return None
         else:
             if right_time <= maxtarget:
-                return self.images[idx]
+                return self.get_image(right_time)
             else:  # At this point we can deduce that left_time < start
                 return None
-
-    def reduce_dim(self, sample_size=1000):
-        """
-        Apply PCA transformation to each image of the set.
-        """
-        nb_images = len(self.images)
-        if not sample_size:
-            sample_size = nb_images
-        elif 0 < sample_size <= 1:
-            sample_size = int(nb_images * sample_size)
-        else:
-            sample_size = min(nb_images, sample_size)
-        if sample_size == nb_images:
-            sample = self.images
-        else:
-            sample = random.sample(self.images, sample_size)
-        X = np.empty((sample_size, self.img_size))
-        for i, img in enumerate(sample):
-            X[i] = img['data']
-        self.pca = PCA(copy=True).fit(X)
-        for img in self.images:
-            #transform returns a matrix even when given a vector
-            img['data'] = self.pca.transform(img['data'])[0]
-        return self.pca
-
-    def recover_images(self, pixels):
-        pixels_out = self.pca.inverse_transform(pixels)
-        return pixels_out.clip(0, 1, pixels_out)
-
-    def time(self, i):
-        return self.images[i]['time']
-
-    def __getitem__(self, item):
-        return self.images[item]
-
-    def __iter__(self):
-        return iter(self.images)
-
-    def __len__(self):
-        return len(self.images)
 
 
 class DataSet:
@@ -427,7 +397,7 @@ class DataSet:
         data_points = DataSet._find_datapoints(images, hist_len, interval,
                                                future_time)
         #Copy the data into numpy arrays
-        imgdim = len(images[0]['data'])
+        imgdim = images.img_size
         nb_ex = len(data_points)
         nb_feat = (imgdim+1) * hist_len
         input_data = np.ndarray((nb_ex, nb_feat), dtype=PIXEL_TYPE)
@@ -590,10 +560,3 @@ class DataSet:
             if dataset.is_split:
                 dataset.__dispatch_data(*dataset.is_split)
             return dataset
-
-#logging.basicConfig()
-#fp, group = create_imagegroup('/home/romain/tmp/temp.h5', (80, 117, 3))
-#imgset = ImageSet(fp)
-#imgset.add_images('/home/romain/prog/meteography/data/webcams/tinycam')
-#imgset.reduce_dim()
-#fp.close()

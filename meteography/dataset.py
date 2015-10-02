@@ -17,6 +17,7 @@ import PIL
 from sklearn.decomposition import PCA
 from sklearn.decomposition import TruncatedSVD
 import tables
+from tables.nodes import filenode
 
 MAX_PIXEL_VALUE = 255
 COLOR_BANDS = ('R', 'G', 'B')
@@ -127,12 +128,18 @@ class ImageSet:
             True if the images are processed as greyscale images
         """
         self.fileh = fileh
-        self.table = fileh.get_node('/images/imgset')
+        self.table = fileh.root.images.imgset
         self.img_shape = self.table.attrs.img_shape
-        self.img_size = np.prod(self.img_shape)
         self.is_grey = len(self.img_shape) == 2
+        if '/images/pcamodel' in self.fileh:
+            fn = filenode.open_node(self.fileh.root.images.pcamodel, 'r')
+            self.pca = pickle.load(fn)
+            self.img_size = self.pca.components_.shape[0]
+            fn.close()
+        else:
+            self.pca = None
+            self.img_size = np.prod(self.img_shape)
         self._times = None
-        self.pca = None
 
     def _img_from_row(self, row, reduced=True):
         """
@@ -141,7 +148,7 @@ class ImageSet:
         will contain the PCA-transformed data.
         """
         if reduced and self.pca is not None:
-            pca_pixels = self.fileh.get_node('/images/pcapixels')
+            pca_pixels = self.fileh.root.images.pcapixels
             pixels = pca_pixels[row.nrow]
         else:
             pixels = row['pixels']
@@ -292,11 +299,12 @@ class ImageSet:
         sample = self._sample(sample_size)
         self.pca = PCA().fit(sample) # FIXME: choose an algo
         ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
-        components = self.pca.components_
-        self.fileh.create_array('/images', 'pcacomponents', components)
+        fn = filenode.new_node(self.fileh, where='/images', name='pcamodel')
+        pickle.dump(self.pca, fn, pickle.HIGHEST_PROTOCOL)
+        fn.close()
 
         #Apply PCA transformation to all the images in chunks
-        self.img_size = components.shape[0]
+        self.img_size = self.pca.components_.shape[0]
         pixels = self.table.cols.pixels
         pca_pixels = self.fileh.create_array('/images', 'pcapixels',
                                              shape=(nb_images, self.img_size),

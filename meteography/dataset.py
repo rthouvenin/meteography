@@ -43,41 +43,6 @@ def image_descriptor(img_size):
     }
 
 
-def create_imagegroup(thefile, img_shape):
-    """
-    Create in `thefile` a pytables group 'images' to be used for image data.
-    Create in the group a table of images of shape `img_shape` named 'images'.
-
-    Parameters
-    ----------
-    thefile : str or pytables file descriptor
-        The name of the file to create / open, or a file descriptor already
-        opened.
-    img_shape : tuple
-        The shape of the images: (height, width[, bands])
-
-    Returns
-    -------
-    The file descriptor (still opened)
-    """
-    if not hasattr(thefile, 'create_table'):
-        fp = tables.open_file(thefile, mode='w')
-    else:
-        fp = thefile
-    try:
-        desc = image_descriptor(np.prod(img_shape))
-        group = fp.create_group('/', 'images')
-        table = fp.create_table(group, 'imgset', desc)
-        table.attrs.img_shape = img_shape
-        table.cols.time.create_csindex()
-    except Exception as e:
-        #Avoid an orphan open file in case of a problem
-        if fp is not thefile:
-            fp.close()
-        raise e
-    return fp
-
-
 def parse_timestamp(filename):
     """
     File name parser when the name without extension is a Unix Epoch
@@ -140,7 +105,60 @@ class ImageSet:
             self.pca = None
             self.img_size = np.prod(self.img_shape)
         self._times = None
-
+    
+    @classmethod
+    def create(cls, thefile, img_shape):
+        """
+        Create in `thefile` a pytables node 'images' to be used for image data.
+        Create in the node a table 'imgset' of images of shape `img_shape`.
+        Create a `ImageSet` backed by this file and return it.
+    
+        Parameters
+        ----------
+        thefile : str or pytables file descriptor
+            The name of the file to create, or a file descriptor already
+            opened. If the name of an existing file is given, it will be 
+            overwritten.
+        img_shape : tuple
+            The shape of the images: (height, width[, bands])
+        """
+        if not hasattr(thefile, 'create_table'):
+            fp = tables.open_file(thefile, mode='w')
+        else:
+            fp = thefile
+        try:
+            desc = image_descriptor(np.prod(img_shape))
+            group = fp.create_group('/', 'images')
+            table = fp.create_table(group, 'imgset', desc)
+            table.attrs.img_shape = img_shape
+            table.cols.time.create_csindex()
+        except Exception as e:
+            #Avoid an orphan open file in case of a problem
+            if fp is not thefile:
+                fp.close()
+            raise e
+        return cls(fp)
+    
+    @classmethod
+    def open(cls, thefile):
+        """
+        Instantiate a ImageSet backed by `thefile`.
+        
+        Parameters
+        ----------
+        thefile : str or pytables file descriptor
+            The name of the file to open, or a pytables file descriptor already
+            opened. 
+        """
+        if not hasattr(thefile, 'create_table'):
+            fp = tables.open_file(thefile, mode='a')
+        else:
+            fp = thefile
+        return cls(fp)
+    
+    def close(self):
+        return self.fileh.close()
+    
     def _img_from_row(self, row, reduced=True):
         """
         Create from a row a dictionary with the details of the image in that

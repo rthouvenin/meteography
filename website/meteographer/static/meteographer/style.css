@@ -1,0 +1,22 @@
+.camlist {
+  list-style: none;
+}
+
+.camlist li {
+  padding: 10px;
+  height: 80px;
+}
+.camlist li:nth-child(odd) {
+  background-color: paleturquoise;
+}
+.camlist li:nth-child(even) {
+  background-color: cadetblue;
+}
+.camlist .thumbnail {
+  vertical-align: middle;
+}
+
+.camlist div {
+  display: inline-block;
+  vertical-align: middle;
+}

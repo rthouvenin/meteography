@@ -182,7 +182,7 @@ class ImageSet:
         If `reduced` is True and the ImageSet was reduced, the key 'data'
         will contain the PCA-transformed data.
         """
-        rows = self.table.where('time == ' + str(t))
+        rows = self.table.where('time == t')
         row = next(rows, None)
         if row:
             return self._img_from_row(row, reduced)
@@ -270,13 +270,19 @@ class ImageSet:
                 self._add_image(fullname, name_parser)
         self.table.flush()
 
-#    def sort(self): Requires pcapixels sorting as well
-#        newtable = self.table.copy(newname='sortedimgset', sortby='time')
-#        self.table.remove()
-#        newtable.rename('imgset')
-#        self.table = newtable
-#        self.fileh.flush()
-#        self.sorted = True
+    def sort(self):
+        """
+        Replaces the image table with a copy sorted by time.
+        This method should be called before reducing the ImageSet, as it will
+        not sort the compressed data.
+        """
+        newtable = self.table.copy(newname='sortedimgset', sortby='time',
+                                   propindexes=True)
+        self.table.remove()
+        newtable.rename('imgset')
+        self.table = newtable
+        self.fileh.flush()
+        self.sorted = True
 
     def _sample(self, sample_size):
         """

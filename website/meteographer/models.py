@@ -12,5 +12,5 @@ class Webcam(models.Model):
 class Prediction(models.Model):
     webcam = models.ForeignKey(Webcam)
     comp_date = models.DateTimeField('computation date')
-    pred_date = models.DateTimeField('prediction date')
+    target = models.DurationField()
     

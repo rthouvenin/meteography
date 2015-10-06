@@ -15,7 +15,8 @@
     <ul class="camlist">
       {% for webcam in webcams %}
         <li>
-          <!--<img class="thumbnail" src="bard.jpg" alt="Latest Bard prediction" />-->
+          <img src="{{ webcam.prediction.image }}" 
+               class="thumbnail" alt="Latest {{ webcam.name }} prediction" />
           <div>
             <header>{{ webcam.name }}</header>
             <!--<p>Latest prediction done 5 min ago for 30 min later</p>-->

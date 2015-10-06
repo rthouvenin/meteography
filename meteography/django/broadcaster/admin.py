@@ -1,7 +1,7 @@
 from django.contrib import admin
 
-from meteographer.models import Prediction
-from meteographer.models import Webcam
+from meteography.django.broadcaster.models import Prediction
+from meteography.django.broadcaster.models import Webcam
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):

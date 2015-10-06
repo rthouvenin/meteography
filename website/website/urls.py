@@ -5,5 +5,5 @@ admin.autodiscover()
 
 urlpatterns = patterns('',
     url(r'^admin/', include(admin.site.urls)),
-    url(r'^', include('meteographer.urls')),
+    url(r'^', include('meteography.django.broadcaster.urls')),
 )

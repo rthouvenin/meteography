@@ -1,4 +1,5 @@
-To deploy dev django project:
+To deploy dev django project the first time:
  - set env variable DJANGO_SETTINGS_MODULE=website.settings.dev
- - create DB: from website run './manage.py syncdb'
+ - create DB: from website run './manage.py migrate'
+ - create super user: from website run './manage.py superuser'
  - run server: from website run './manage.py runserver'

@@ -34,7 +34,7 @@ REQ_APPS = (
     'django.contrib.staticfiles',
 )
 PROJECT_APPS = (
-    'meteographer',
+    'meteography.django.broadcaster',
 )
 INSTALLED_APPS = REQ_APPS + PROJECT_APPS
 

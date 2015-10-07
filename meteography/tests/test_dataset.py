@@ -11,23 +11,33 @@ from meteography.dataset import ImageSet
 
 def make_filedict(t, jitter=False):
     return {
-        'shape': (20, 20),
-        'time': t + (random.randint(-2, 2) if jitter else 0),
+        'name': str(t) + '.png',
+        'img_time': t + (random.randint(-2, 2) if jitter else 0),
         'data': np.random.rand(20*20)
     }
 
 
-@pytest.fixture(scope='class')
-def imageset():
-    images = [make_filedict(t) for t in [4200, 420, 4242, 42]]
-    return ImageSet(images)
+def imgset_fixture(request, tmpdir_factory, fname, images):
+    filename = tmpdir_factory.mktemp('h5').join(fname).strpath
+    imageset = ImageSet.create(filename, (20, 20))
+    for img in images:
+        imageset._add_image(**img)
+    imageset.fileh.flush()
+    def fin():
+        imageset.close()
+    request.addfinalizer(fin)
+    return imageset
 
+@pytest.fixture(scope='class')
+def imageset(request, tmpdir_factory):
+    images = [make_filedict(t) for t in [4200, 420, 4242, 42]]
+    return imgset_fixture(request, tmpdir_factory, 'imageset.h5', images)
 
 @pytest.fixture
-def bigimageset():
+def bigimageset(request, tmpdir_factory):
     random.seed(42)  # Reproducible tests
     images = [make_filedict(t, True) for t in range(6000, 12000, 60)]
-    return ImageSet(images)
+    return imgset_fixture(request, tmpdir_factory, 'bigimageset.h5', images)
 
 
 class TestImageSet:
@@ -40,9 +50,11 @@ class TestImageSet:
         closest = imageset.find_closest(start, interval)
         assert(closest is None)
 
-    def test_init(self, imageset):
+    def test_sort(self, imageset):
         "The first element should have the smallest time"
-        assert(imageset.time(0) == 42)
+        imageset.sort()
+        img0 = next(iter(imageset))
+        assert(img0['time'] == 42)
 
     def test_closest_last_inrange(self, imageset):
         "The target is past the last element, the last element is acceptable"
@@ -75,22 +87,17 @@ class TestImageSet:
     def test_reduce_fewimg(self, bigimageset):
         "More pixels than images"
         bigimageset.reduce_dim()
-        img0 = bigimageset[0]
+        img0 = next(iter(bigimageset))
         assert(len(img0['data']) <= len(bigimageset))
 
 
 class TestDataSet:
-    #Using a class scope, we also check that calling split multiple times
-    #is not affected by previous splits
     @staticmethod
     @pytest.fixture
     def dataset(bigimageset):
-        return DataSet.make(bigimageset, 5, 60, 120)
-
-    @staticmethod
-    @pytest.fixture
-    def freshdataset(bigimageset):
-        return DataSet.make(bigimageset, 5, 60, 120)
+        dataset = DataSet.create(bigimageset.fileh, bigimageset)
+        dataset.make(None, 5, 60, 120)
+        return dataset
 
     def check_length(self, ds, train, valid, test):
         assert(len(ds.train_input) == train)
@@ -104,16 +111,10 @@ class TestDataSet:
         assert(dataset.input_data.shape[1] <= (max_size+1)*dataset.history_len)
         assert(dataset.output_data.shape[1] <= max_size)
 
-    def test_make_reducedset(self, bigimageset):
-        bigimageset.reduce_dim()
-        dataset = DataSet.make(bigimageset, 5, 60, 120)
-        assert(dataset.output_data.shape[1] == len(bigimageset[0]['data']))
-
-    def test_finddatapoints(self, bigimageset):
+    def test_finddatapoints(self, dataset):
         "The list of data points should have the expected dimensions"
         interval, pred_time = 60, 120
-        data_points = DataSet._find_datapoints(bigimageset, 5, interval,
-                                               pred_time)
+        data_points = dataset._find_datapoints(5, interval, pred_time)
         # (max - future_time - (hist_len - 1)*interval - min) / step + 1
         # = (2000 - 20 - 4*10 - 1000) / 10 + 1 = 95
         assert(len(data_points) == 95)

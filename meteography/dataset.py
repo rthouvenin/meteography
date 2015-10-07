@@ -198,11 +198,19 @@ class ImageSet:
 
     def __len__(self):
         """Return the number of images in the set."""
-        return len(self.table.nrows)
+        return self.table.nrows
+    
+    def _add_image(self, name, img_time, data):
+        row = self.table.row
+        row['name'] = name
+        row['time'] = img_time
+        row['pixels'] = data
+        row.append()
+        self._times = None  # invalidate times cache
 
-    def _add_image(self, imgfile, name_parser):
+    def _add_from_file(self, imgfile, name_parser):
         """
-        `add_image` without flushing the table.
+        `add_from_file` without flushing the table.
         """
         try:
             with open(imgfile, 'rb') as fp:
@@ -220,17 +228,13 @@ class ImageSet:
             #Flatten the data in case of RGB tuples
             if data.ndim > 1:
                 data = data.flatten()
+                
             img_time = name_parser(imgfile)
-            row = self.table.row
-            row['name'] = imgfile
-            row['time'] = img_time
-            row['pixels'] = data
-            row.append()
-            self._times = None  # invalidate times cache
+            self._add_image(imgfile, img_time, data)
         except Exception as e:
             logger.warn("Ignoring file %s: %s" % (imgfile, e))
 
-    def add_image(self, imgfile, name_parser=parse_timestamp):
+    def add_from_file(self, imgfile, name_parser=parse_timestamp):
         """
         Add an image to the set.
 
@@ -242,7 +246,7 @@ class ImageSet:
             A function that takes an absolute filename as argument and
             returns the timestamp of when the photo was taken
         """
-        self._add_image(imgfile, name_parser)
+        self._add_from_file(imgfile, name_parser)
         self.table.flush()
 
     def add_images(self, directory, name_parser=parse_timestamp,
@@ -267,7 +271,7 @@ class ImageSet:
                 if recursive:
                     self.add_images(fullname, name_parser)
             else:
-                self._add_image(fullname, name_parser)
+                self._add_from_file(fullname, name_parser)
         self.table.flush()
 
     def sort(self):

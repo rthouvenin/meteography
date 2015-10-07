@@ -43,15 +43,17 @@ if args.datapath is not None:
     start_time = time.time()
     imageset.reduce_dim()
     logging.info("Done in %.4fs" % (time.time() - start_time))
+    dataset = DataSet.create(imageset.fileh, imageset)
 else:
     logging.info("Opening the image set...")
     start_time = time.time()
     imageset = ImageSet.open(args.hdf5path)
     logging.info("Done in %.4fs" % (time.time() - start_time))
+    dataset = DataSet.open(imageset.fileh, imageset)
 
 start_time = time.time()
 logging.info("Creating the data set...")
-dataset = DataSet.make(imageset)
+dataset.make()
 dataset.split(.8, .2)
 logging.info("Done in %.4fs" % (time.time() - start_time))
 #saving it for later

@@ -389,7 +389,7 @@ class ImageSet:
 
 
 class DataSet:
-    def __init__(self, imageset, indata, outdata):
+    def __init__(self, fileh, imageset):
         """
         Build a DataSet from the images of `imageset`.
         The input and target data are built, but not split into training,
@@ -400,23 +400,69 @@ class DataSet:
         imageset : ImageSet
             The ImageSet containing all the source images.
         """
+        self.fileh = fileh
         self.imgset = imageset
-        self.input_data = indata
-        self.output_data = outdata
         self.img_shape = imageset.img_shape
         self.img_size = imageset.img_size
-        self.history_len = indata.shape[1] % self.img_size
         self.is_split = False
-
+    
     @classmethod
-    def make(cls, images, hist_len=3, interval=600, future_time=1800):
+    def create(cls, thefile, imgset):
         """
-        Constructs a DataSet from the ImageSet `images`.
+        Create in `thefile` a pytables node 'examples' to be used for datasets.
+        Create a DataSet backed by this file and with `imgset` as image source.
+    
+        Parameters
+        ----------
+        thefile : str or pytables file descriptor
+            The name of the file to create, or a file descriptor already
+            opened. If the name of an existing file is given, it will be 
+            overwritten.
+        imgset : ImageSet
+            The image source to be used to construct learning examples
+        """
+        if not hasattr(thefile, 'create_table'):
+            fp = tables.open_file(thefile, mode='w')
+        else:
+            fp = thefile
+        try:
+            fp.create_group('/', 'examples')
+        except Exception as e:
+            #Avoid an orphan open file in case of a problem
+            if fp is not thefile:
+                fp.close()
+            raise e
+        return cls(fp, imgset)
+    
+    @classmethod
+    def open(cls, thefile, imageset):
+        """
+        Instantiate a DataSet backed by `thefile` and imageset.
+        
+        Parameters
+        ----------
+        thefile : str or pytables file descriptor
+            The name of the file to open, or a pytables file descriptor already
+            opened. 
+        imgset : ImageSet
+            The image source to be used to construct learning examples
+        """
+        if not hasattr(thefile, 'create_table'):
+            fp = tables.open_file(thefile, mode='a')
+        else:
+            fp = thefile
+        return cls(fp, imageset)
+
+    def make(self, name=None, hist_len=3, interval=600, future_time=1800):
+        """
+        Constructs a set of training examples.
+        If a node with the same name already exists, it is overwritten.
 
         Parameters
         ----------
-        imageset : ImageSet
-            The ImageSet containing all the source images.
+        name : string or None
+            The name of the set (for future reference). If None, one is 
+            generated from the other arguments values.
         hist_len : int
             The number of images to include in the input data
         interval : int
@@ -426,24 +472,39 @@ class DataSet:
             and the target image
         """
         #Find the representations of the data points
-        data_points = DataSet._find_datapoints(images, hist_len, interval,
-                                               future_time)
-        #Copy the data into numpy arrays
-        imgdim = images.img_size
+        data_points = self._find_datapoints(hist_len, interval, future_time)
+        
+        #Create pytables arrays
+        if name is None:
+            name = 'h{}i{}t{}'.format(hist_len, interval, future_time)
+        ex_group = self.fileh.root.examples
+        if name in ex_group:
+            self.fileh.remove_node(ex_group, name, recursive=True)
+        group = self.fileh.create_group(ex_group, name)
+        
+        imgdim = self.img_size
         nb_ex = len(data_points)
         nb_feat = (imgdim+1) * hist_len
-        input_data = np.ndarray((nb_ex, nb_feat), dtype=PIXEL_TYPE)
-        output_data = np.ndarray((nb_ex, imgdim), dtype=PIXEL_TYPE)
+        pixel_atom = tables.Atom.from_sctype(PIXEL_TYPE)
+        input_data = self.fileh.create_array(group, 'input', atom=pixel_atom,
+                                             shape=(nb_ex, nb_feat))
+        output_data = self.fileh.create_array(group, 'output', atom=pixel_atom,
+                                              shape=(nb_ex, imgdim))
+        #Copy the data into the arrays
         for i, data_point in enumerate(data_points):
             example, target = data_point
             for j, img in enumerate(example):
                 input_data[i, imgdim*j:imgdim*(j+1)] = img['data']
-                input_data[i, j-hist_len] = target['time'] - img['time']
+                #time is stored as long but pytables slice does not accept it
+                input_data[i, j-hist_len] = int(target['time'] - img['time'])
             output_data[i] = target['data']
-        return cls(images, input_data, output_data)
 
-    @staticmethod
-    def _find_datapoints(imgset, hist_len, interval, future_time):
+        self.fileh.flush()
+        self.input_data = input_data
+        self.output_data = output_data
+        self.history_len = hist_len
+
+    def _find_datapoints(self, hist_len, interval, future_time):
         """
         Build a list of tuples (input_images, output_value) to be used for
         training or validation.
@@ -467,18 +528,18 @@ class DataSet:
         """
         assert hist_len > 0 and interval > 0 and future_time > 0
         data_points = []
-        for i, img in enumerate(imgset):
+        for i, img in enumerate(self.imgset):
             images_i = [img]
             for j in range(1, hist_len):
                 prev_time = images_i[j-1]['time']
-                img_j = imgset.find_closest(prev_time, interval)
+                img_j = self.imgset.find_closest(prev_time, interval)
                 if img_j:
                     images_i.append(img_j)
                 else:
                     break
             if len(images_i) == hist_len:
                 latest_time = images_i[-1]['time']
-                target = imgset.find_closest(latest_time, future_time)
+                target = self.imgset.find_closest(latest_time, future_time)
                 if target:
                     data_points.append((images_i, target))
         return data_points
@@ -501,7 +562,7 @@ class DataSet:
         img = self.output_data[i]
         return img.reshape(self.img_shape)
 
-    def split(self, train=.7, valid=.15):
+    def split(self, train=.7, valid=.15, shuffle=False):
         """
         Split the examples into a training set, validation set and test set.
         The data is shuffled before the split, and the original order is lost.
@@ -519,10 +580,11 @@ class DataSet:
         """
         assert 0 <= (train + valid) <= 1
         full_size = len(self.input_data)
-        indexes = range(full_size)
-        np.random.shuffle(indexes)
-        self.input_data = self.input_data[indexes]
-        self.output_data = self.output_data[indexes]
+#        if shuffle:  # need extra work for large datasets
+#            indexes = range(full_size)
+#            np.random.shuffle(indexes)
+#            self.input_data = self.input_data[indexes]
+#            self.output_data = self.output_data[indexes]
         train_size = int(full_size * train)
         valid_size = int(full_size * valid)
         self.__dispatch_data(train_size, valid_size)
@@ -557,38 +619,9 @@ class DataSet:
             return self.test_input, self.test_output
         return [], []
 
-    def save(self, path):
-        """
-        Save this DataSet in a file.
-
-        Parameters
-        ----------
-        path : str
-            the file name. If the file does not exist it is created
-        """
-        with open(path, 'wb') as f:
-            pickle.dump(self, f, pickle.HIGHEST_PROTOCOL)
-
     def __getstate__(self):
         odict = self.__dict__.copy()
         split_keys = ['train_input', 'valid_input', 'test_input',
                       'train_output', 'valid_output', 'test_output']
         odict.update(dict.fromkeys(split_keys))
         return odict
-
-    @staticmethod
-    def load(path):
-        """
-        Create a DataSet from a file created with the `save` method
-
-        Parameters
-        ----------
-        path : str
-            the file name
-        """
-        with open(path, 'rb') as f:
-            dataset = pickle.load(f)
-            #Re-create training, validation and test views on the data
-            if dataset.is_split:
-                dataset.__dispatch_data(*dataset.is_split)
-            return dataset

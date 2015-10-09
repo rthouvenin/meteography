@@ -23,6 +23,7 @@ def imgset_fixture(request, tmpdir_factory, fname, images):
     for img in images:
         imageset._add_image(**img)
     imageset.fileh.flush()
+
     def fin():
         imageset.close()
     request.addfinalizer(fin)
@@ -38,6 +39,11 @@ def bigimageset(request, tmpdir_factory):
     random.seed(42)  # Reproducible tests
     images = [make_filedict(t, True) for t in range(6000, 12000, 60)]
     return imgset_fixture(request, tmpdir_factory, 'bigimageset.h5', images)
+
+@pytest.fixture
+def emptyimageset(request, tmpdir_factory):
+    images = []
+    return imgset_fixture(request, tmpdir_factory, 'emptyset.h5', images)
 
 
 class TestImageSet:
@@ -58,19 +64,19 @@ class TestImageSet:
 
     def test_closest_last_inrange(self, imageset):
         "The target is past the last element, the last element is acceptable"
-        self.helper_closest_match(imageset, 4210, 50, 4242)
+        self.helper_closest_match(imageset, 4280, 50, 4242)
 
     def test_closest_last_outrange(self, imageset):
         "The target is past the last element, the last element is not acceptable"
-        self.helper_closest_nomatch(imageset, 4250, 50)
+        self.helper_closest_nomatch(imageset, 4350, 50)
 
     def test_closest_exactmatch(self, imageset):
         "The target exists in the set"
-        self.helper_closest_match(imageset, 400, 20, 420)
+        self.helper_closest_match(imageset, 440, 20, 420)
 
     def test_closest_matchleft_inrange(self, imageset):
         "The closest match is lower than the target and acceptable"
-        self.helper_closest_match(imageset, 400, 40, 420)
+        self.helper_closest_match(imageset, 440, 40, 420)
 
     def test_closest_matchleft_outrange(self, imageset):
         "The closest match is lower than the target but not acceptable"
@@ -78,7 +84,7 @@ class TestImageSet:
 
     def test_closest_matchright_inrange(self, imageset):
         "The closest match is greater than the target and acceptable"
-        self.helper_closest_match(imageset, 4100, 150, 4242)
+        self.helper_closest_match(imageset, 4380, 150, 4242)
 
     def test_closest_matchright_outrange(self, imageset):
         "The closest match is greater than the target but not acceptable"
@@ -99,6 +105,12 @@ class TestDataSet:
         dataset.make(None, 5, 60, 120)
         return dataset
 
+    @staticmethod
+    @pytest.fixture
+    def emptydataset(emptyimageset):
+        dataset = DataSet.create(emptyimageset.fileh, emptyimageset)
+        return dataset
+
     def check_length(self, ds, train, valid, test):
         assert(len(ds.train_input) == train)
         assert(len(ds.train_output) == train)
@@ -116,21 +128,26 @@ class TestDataSet:
         interval, pred_time = 60, 120
         data_points = dataset._find_datapoints(5, interval, pred_time)
         # (max - future_time - (hist_len - 1)*interval - min) / step + 1
-        # = (2000 - 20 - 4*10 - 1000) / 10 + 1 = 95
-        assert(len(data_points) == 95)
+        # = (12000 - 120 - 4*60 - 6000) / 60 = 94
+        assert(len(data_points) == 94)
         X, y = random.choice(data_points)
         assert(len(X) == 5)
         intervals = [X[i+1]['time'] - X[i]['time'] for i in range(len(X)-1)]
         assert(min(intervals) <= 2*interval)
         assert(y['time'] - X[-1]['time'] <= 2*pred_time)
 
+    def test_finddatapoints_empty(self, emptydataset):
+        "An empty imageset should not be a problem"
+        data_points = emptydataset._find_datapoints(6, 6, 6)
+        assert(len(data_points) == 0)
+
     def test_split_60_30(self, dataset):
         "default = 70% (66.5) training, 15% (14.25) validation, 15% test"
         dataset.split()
-        self.check_length(dataset, 66, 14, 15)
+        self.check_length(dataset, 65, 14, 15)
 
     def test_split_80_20(self, dataset):
         "80% (76) training, 20% (19) validation, 0 test"
-        assert(len(dataset.input_data) == 95)
+        assert(len(dataset.input_data) == 94)
         dataset.split(.8, .2)
-        self.check_length(dataset, 76, 19, 0)
+        self.check_length(dataset, 75, 18, 1)

@@ -15,7 +15,6 @@ import time
 import numpy as np
 import PIL
 from sklearn.decomposition import PCA
-from sklearn.decomposition import TruncatedSVD
 import tables
 from tables.nodes import filenode
 
@@ -105,19 +104,19 @@ class ImageSet:
             self.pca = None
             self.img_size = np.prod(self.img_shape)
         self._times = None
-    
+
     @classmethod
     def create(cls, thefile, img_shape):
         """
         Create in `thefile` a pytables node 'images' to be used for image data.
         Create in the node a table 'imgset' of images of shape `img_shape`.
         Create a `ImageSet` backed by this file and return it.
-    
+
         Parameters
         ----------
         thefile : str or pytables file descriptor
             The name of the file to create, or a file descriptor already
-            opened. If the name of an existing file is given, it will be 
+            opened. If the name of an existing file is given, it will be
             overwritten.
         img_shape : tuple
             The shape of the images: (height, width[, bands])
@@ -138,27 +137,27 @@ class ImageSet:
                 fp.close()
             raise e
         return cls(fp)
-    
+
     @classmethod
     def open(cls, thefile):
         """
         Instantiate a ImageSet backed by `thefile`.
-        
+
         Parameters
         ----------
         thefile : str or pytables file descriptor
             The name of the file to open, or a pytables file descriptor already
-            opened. 
+            opened.
         """
         if not hasattr(thefile, 'create_table'):
             fp = tables.open_file(thefile, mode='a')
         else:
             fp = thefile
         return cls(fp)
-    
+
     def close(self):
         return self.fileh.close()
-    
+
     def _img_from_row(self, row, reduced=True):
         """
         Create from a row a dictionary with the details of the image in that
@@ -199,7 +198,7 @@ class ImageSet:
     def __len__(self):
         """Return the number of images in the set."""
         return self.table.nrows
-    
+
     def _add_image(self, name, img_time, data):
         row = self.table.row
         row['name'] = name
@@ -228,7 +227,7 @@ class ImageSet:
             #Flatten the data in case of RGB tuples
             if data.ndim > 1:
                 data = data.flatten()
-                
+
             img_time = name_parser(imgfile)
             self._add_image(imgfile, img_time, data)
         except Exception as e:
@@ -359,7 +358,7 @@ class ImageSet:
     def find_closest(self, start, interval):
         """
         Search for the image with its time attribute the closest to
-        `start+interval`, constrained in `]start, start+2*interval]`.
+        `start-interval`, constrained in `[start-2*interval, start[`.
         This is a binary search in O(log n), except the first time it is called
 
         Return
@@ -367,28 +366,31 @@ class ImageSet:
         The image (a `dict`) or `None` if none is found
         """
         assert start >= 0 and interval > 0
-        target = start + interval
-        maxtarget = target + interval
+        target = start - interval
+        mintarget = target - interval
         if self._times is None:
             self._times = self.table.cols.time[:]
             self._times.sort()
 
-        idx = bisect.bisect(self._times, start+interval)
-        left_time = self._times[idx-1]  # left_time <= target < maxtarget
+        idx = bisect.bisect_left(self._times, target)
         if idx == len(self._times):
-            right_time = maxtarget+1  # unreachable
+            right_time = start  # unreachable
         else:
-            right_time = self._times[idx]  # right_time > target
+            right_time = self._times[idx]  # right_time > target > mintarget
+        if idx == 0:
+            left_time = mintarget-1  # unreachable
+        else:
+            left_time = self._times[idx-1]  # left_time <= target
 
         if target - left_time < right_time - target:
-            if left_time > start:
+            if left_time >= mintarget:
                 return self.get_image(left_time)
-            else:  # At this point we can deduce that right_time > maxtarget
+            else:  # At this point we can deduce that right_time >= start
                 return None
         else:
-            if right_time <= maxtarget:
+            if right_time < start:
                 return self.get_image(right_time)
-            else:  # At this point we can deduce that left_time < start
+            else:  # At this point we can deduce that left_time < mintarget
                 return None
 
 
@@ -409,18 +411,18 @@ class DataSet:
         self.img_shape = imageset.img_shape
         self.img_size = imageset.img_size
         self.is_split = False
-    
+
     @classmethod
     def create(cls, thefile, imgset):
         """
         Create in `thefile` a pytables node 'examples' to be used for datasets.
         Create a DataSet backed by this file and with `imgset` as image source.
-    
+
         Parameters
         ----------
         thefile : str or pytables file descriptor
             The name of the file to create, or a file descriptor already
-            opened. If the name of an existing file is given, it will be 
+            opened. If the name of an existing file is given, it will be
             overwritten.
         imgset : ImageSet
             The image source to be used to construct learning examples
@@ -437,17 +439,17 @@ class DataSet:
                 fp.close()
             raise e
         return cls(fp, imgset)
-    
+
     @classmethod
     def open(cls, thefile, imageset):
         """
         Instantiate a DataSet backed by `thefile` and imageset.
-        
+
         Parameters
         ----------
         thefile : str or pytables file descriptor
             The name of the file to open, or a pytables file descriptor already
-            opened. 
+            opened.
         imgset : ImageSet
             The image source to be used to construct learning examples
         """
@@ -465,7 +467,7 @@ class DataSet:
         Parameters
         ----------
         name : string or None
-            The name of the set (for future reference). If None, one is 
+            The name of the set (for future reference). If None, one is
             generated from the other arguments values.
         hist_len : int
             The number of images to include in the input data
@@ -477,7 +479,7 @@ class DataSet:
         """
         #Find the representations of the data points
         data_points = self._find_datapoints(hist_len, interval, future_time)
-        
+
         #Create pytables arrays
         if name is None:
             name = 'h{}i{}t{}'.format(hist_len, interval, future_time)
@@ -485,23 +487,27 @@ class DataSet:
         if name in ex_group:
             self.fileh.remove_node(ex_group, name, recursive=True)
         group = self.fileh.create_group(ex_group, name)
-        
+
         imgdim = self.img_size
         nb_ex = len(data_points)
         nb_feat = (imgdim+1) * hist_len
         pixel_atom = tables.Atom.from_sctype(PIXEL_TYPE)
-        input_data = self.fileh.create_array(group, 'input', atom=pixel_atom,
-                                             shape=(nb_ex, nb_feat))
-        output_data = self.fileh.create_array(group, 'output', atom=pixel_atom,
-                                              shape=(nb_ex, imgdim))
+        input_data = self.fileh.create_earray(group, 'input', atom=pixel_atom,
+                                              shape=(0, nb_feat),
+                                              expectedrows=nb_ex)
+        output_data = self.fileh.create_earray(group, 'output', atom=pixel_atom,
+                                               shape=(0, imgdim),
+                                               expectedrows=nb_ex)
         #Copy the data into the arrays
+        input_row = np.empty((nb_feat,), PIXEL_TYPE)
+        input_rows = (input_row,)
         for i, data_point in enumerate(data_points):
             example, target = data_point
             for j, img in enumerate(example):
-                input_data[i, imgdim*j:imgdim*(j+1)] = img['data']
-                #time is stored as long but pytables slice does not accept it
-                input_data[i, j-hist_len] = int(target['time'] - img['time'])
-            output_data[i] = target['data']
+                input_row[imgdim*j:imgdim*(j+1)] = img['data']
+                input_row[j-hist_len] = target['time'] - img['time']
+            input_data.append(input_rows)
+            output_data.append((target['data'],))
 
         self.fileh.flush()
         self.input_data = input_data
@@ -532,20 +538,21 @@ class DataSet:
         """
         assert hist_len > 0 and interval > 0 and future_time > 0
         data_points = []
+        intervals = [future_time] + [interval] * (hist_len-1)
         for i, img in enumerate(self.imgset):
             images_i = [img]
-            for j in range(1, hist_len):
-                prev_time = images_i[j-1]['time']
-                img_j = self.imgset.find_closest(prev_time, interval)
+            for j in range(hist_len):
+                prev_time = images_i[j]['time']
+                img_j = self.imgset.find_closest(prev_time, intervals[j])
                 if img_j:
                     images_i.append(img_j)
                 else:
                     break
-            if len(images_i) == hist_len:
-                latest_time = images_i[-1]['time']
-                target = self.imgset.find_closest(latest_time, future_time)
-                if target:
-                    data_points.append((images_i, target))
+            if len(images_i) == hist_len+1:
+                images_i.reverse()
+                inputs = images_i[:hist_len]
+                target = images_i[-1]
+                data_points.append((inputs, target))
         return data_points
 
     def input_img(self, i, j):

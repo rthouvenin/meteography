@@ -230,6 +230,7 @@ class ImageSet:
 
             img_time = name_parser(imgfile)
             self._add_image(imgfile, img_time, data)
+            return img_time
         except Exception as e:
             logger.warn("Ignoring file %s: %s" % (imgfile, e))
 
@@ -244,9 +245,15 @@ class ImageSet:
         name_parser : callable
             A function that takes an absolute filename as argument and
             returns the timestamp of when the photo was taken
+
+        Return
+        ------
+        int : The time (Unix epoch) when the image was taken, that can be used
+            to identify it
         """
-        self._add_from_file(imgfile, name_parser)
+        img_time = self._add_from_file(imgfile, name_parser)
         self.table.flush()
+        return img_time
 
     def add_images(self, directory, name_parser=parse_timestamp,
                    recursive=True):
@@ -459,101 +466,193 @@ class DataSet:
             fp = thefile
         return cls(fp, imageset)
 
-    def make(self, name=None, hist_len=3, interval=600, future_time=1800):
+    def create_set(self, name, intervals=[600, 600, 1800], nb_ex=None,
+                   hist_len=3, interval=600, future_time=1800):
         """
-        Constructs a set of training examples.
-        If a node with the same name already exists, it is overwritten.
+        Create a new node in '/examples' of the given `name`, that will store
+        the input and output of examples for the given parameters.
 
         Parameters
         ----------
         name : string or None
-            The name of the set (for future reference). If None, one is
-            generated from the other arguments values.
+            The name of the set (for future reference).
+        intervals : a sequence of None
+            The amount of time between each image of an example. The last
+            element is the amount of time between the last image of the input
+            and the output image. If None, the sequence is created from the
+            values of `hist_len`, `interval` and `future_time`.
+        nb_ex : int or None
+            The number of expected examples that this set will contain, or None
+            if unknown.
         hist_len : int
-            The number of images to include in the input data
+            The number of images to include in the input data.
+            Read only if intervals is None.
         interval : int
-            The number of seconds between each input image
+            The number of seconds between each input image.
+            Read only if intervals is None.
         future_time : int
             The number of seconds between the latest input image
-            and the target image
-        """
-        #Find the representations of the data points
-        data_points = self._find_datapoints(hist_len, interval, future_time)
+            and the target image. Read only if intervals is None.
 
-        #Create pytables arrays
-        if name is None:
-            name = 'h{}i{}t{}'.format(hist_len, interval, future_time)
+        Return
+        ------
+        pytables node : the created node.
+        """
+        if intervals is None:
+            intervals = [interval] * (hist_len-1) + [future_time]
+        else:
+            hist_len = len(intervals)
+
         ex_group = self.fileh.root.examples
         if name in ex_group:
             self.fileh.remove_node(ex_group, name, recursive=True)
-        group = self.fileh.create_group(ex_group, name)
+        set_group = self.fileh.create_group(ex_group, name)
+        set_group._v_attrs.intervals = intervals
 
         imgdim = self.img_size
-        nb_ex = len(data_points)
         nb_feat = (imgdim+1) * hist_len
         pixel_atom = tables.Atom.from_sctype(PIXEL_TYPE)
-        input_data = self.fileh.create_earray(group, 'input', atom=pixel_atom,
-                                              shape=(0, nb_feat),
-                                              expectedrows=nb_ex)
-        output_data = self.fileh.create_earray(group, 'output', atom=pixel_atom,
-                                               shape=(0, imgdim),
-                                               expectedrows=nb_ex)
+        self.fileh.create_earray(set_group, 'input', atom=pixel_atom,
+                                 shape=(0, nb_feat), expectedrows=nb_ex)
+        self.fileh.create_earray(set_group, 'output', atom=pixel_atom,
+                                 shape=(0, imgdim), expectedrows=nb_ex)
+        self.fileh.flush()
+        return set_group
+
+    def make(self, name=None, hist_len=3, interval=600, future_time=1800):
+        """
+        Constructs a set of training examples.
+        If a node with the same name already exists, it is overwritten.
+        The meaning of the parameters is the same as for `create_set`
+        FIXME: rename
+        """
+        #Create pytables group and arrays
+        if name is None:
+            name = 'h{}i{}t{}'.format(hist_len, interval, future_time)
+        newset = self.create_set(name, None, None,
+                                 hist_len, interval, future_time)
+        intervals = newset._v_attrs.intervals
+
+        #Find the representations of the data points
+        data_points = self._find_examples(intervals)
+
+        input_data = newset.input
+        output_data = newset.output
+        nb_feat = input_data.shape[1]
         #Copy the data into the arrays
         input_row = np.empty((nb_feat,), PIXEL_TYPE)
         input_rows = (input_row,)
         for i, data_point in enumerate(data_points):
-            example, target = data_point
-            for j, img in enumerate(example):
-                input_row[imgdim*j:imgdim*(j+1)] = img['data']
-                input_row[j-hist_len] = target['time'] - img['time']
+            self._get_input_data(data_point, input_row)
             input_data.append(input_rows)
-            output_data.append((target['data'],))
+            output_data.append((data_point[1]['data'],))
 
-        self.fileh.flush()
-        self.input_data = input_data
+        input_data.flush()
+        output_data.flush()
+        self.input_data = input_data  # FIXME don't store this in attributes
         self.output_data = output_data
         self.history_len = hist_len
 
-    def _find_datapoints(self, hist_len, interval, future_time):
+    def _find_examples(self, intervals):
         """
         Build a list of tuples (input_images, output_value) to be used for
         training or validation.
 
-        Parameters
-        ----------
-        hist_len : int (strictly greater than 0)
-            The number of input images in each data point
-        interval : int (strictly greater than 0)
-            The approximate (+/- 100%) time interval between each input image
-        future_time : int (strictly greater than 0)
-            The approximate (+/- 100%) time interval between the last input
-            image and the output value
-
         Returns
         -------
         list(tuple(list(filedict), filedict)) : a list of tuples
+            representing examples, as returned by `_find_example`
+        """
+        assert all(intervals)
+        examples = []
+        for i, img in enumerate(self.imgset):
+            example = self._find_example(img, intervals)
+            if example is not None:
+                examples.append(example)
+        return examples
+
+    def _find_example(self, img, intervals):
+        """
+        Try to find a single example that has `img` as a target
+
+        Parameters
+        ----------
+        img : int or dict
+            the time when the image was taken, or a dict representing the image
+            such as returned by `ImageSet.get_image`
+        intervals: sequence
+            c.f. `create_set`
+
+        Return
+        ------
+        tuple(list(filedict), filedict) : a tuple
             (input_images, output_value) where input_images is a list of images
             to be used as the input of an example, and output_value is the
-            output (expected prediction) of the example
+            target (expected prediction) of the example
         """
-        assert hist_len > 0 and interval > 0 and future_time > 0
-        data_points = []
-        intervals = [future_time] + [interval] * (hist_len-1)
-        for i, img in enumerate(self.imgset):
-            images_i = [img]
-            for j in range(hist_len):
-                prev_time = images_i[j]['time']
-                img_j = self.imgset.find_closest(prev_time, intervals[j])
-                if img_j:
-                    images_i.append(img_j)
-                else:
-                    break
-            if len(images_i) == hist_len+1:
-                images_i.reverse()
-                inputs = images_i[:hist_len]
-                target = images_i[-1]
-                data_points.append((inputs, target))
-        return data_points
+        if not hasattr(img, '__getitem__'):
+            #img is in fact a time, first retrieve the image
+            img = self.imgset.get_image(img)
+        if img is None:
+            return None
+        #Search for input images that match the target
+        images_i = [img]
+        hist_len = len(intervals)
+        for j, interval in enumerate(reversed(intervals)):
+            prev_time = images_i[j]['time']
+            img_j = self.imgset.find_closest(prev_time, interval)
+            if img_j:
+                images_i.append(img_j)
+            else:
+                break
+        #If we could find all of them, return an example
+        if len(images_i) == hist_len+1:
+            images_i.reverse()
+            inputs = images_i[:hist_len]
+            target = images_i[-1]
+            return inputs, target
+        return None
+
+    def _get_input_data(self, example, ex_data=None):
+        """
+        Write the input pixels and features of `example` in array `ex_data`.
+        If `ex_data` is None, a new array is created.
+        """
+        imgdim = self.img_size
+        ex_input, target = example
+        hist_len = len(ex_input)
+        if ex_data is None:
+            nb_feat = (imgdim+1) * hist_len
+            ex_data = np.empty((nb_feat,), PIXEL_TYPE)
+
+        for j, img in enumerate(ex_input):
+            ex_data[imgdim*j:imgdim*(j+1)] = img['data']
+            ex_data[j-hist_len] = target['time'] - img['time']
+        return ex_data
+
+    def add_image(self, setname, imgfile):
+        """
+        Add an image to the underlying ImageSet, and creates a new example
+        using this image as expected prediction of the example.
+
+        Parameters
+        ----------
+        setname : str
+            Name of the dataset where the example should be added
+        imgfile : str
+            Filename of the image to add
+        """
+        img_time = self.imgset.add_from_file(imgfile)
+        set_ = self.fileh.get_node(self.fileh.root.examples, setname)
+        intervals = set_._v_attrs.intervals
+        example = self._find_example(img_time, intervals)
+        print(example)
+        if example is not None:
+            input_row = self._get_input_data(example)
+            set_.input.append((input_row, ))
+            set_.output.append((example[1]['data'], ))
+            set_.input.flush()
+            set_.output.flush()
 
     def input_img(self, i, j):
         """

@@ -3,6 +3,7 @@
 import random
 
 import numpy as np
+from PIL import Image
 import pytest
 
 from meteography.dataset import DataSet
@@ -28,6 +29,15 @@ def imgset_fixture(request, tmpdir_factory, fname, images):
         imageset.close()
     request.addfinalizer(fin)
     return imageset
+
+
+@pytest.fixture(scope='session')
+def imgfile(tmpdir_factory):
+    filename = tmpdir_factory.mktemp('img').join('12000.jpg').strpath
+    pixels = np.zeros((20, 20))
+    img = Image.fromarray(pixels, mode='L')
+    img.save(filename)
+    return filename
 
 @pytest.fixture(scope='class')
 def imageset(request, tmpdir_factory):
@@ -102,7 +112,7 @@ class TestDataSet:
     @pytest.fixture
     def dataset(bigimageset):
         dataset = DataSet.create(bigimageset.fileh, bigimageset)
-        dataset.make(None, 5, 60, 120)
+        dataset.make('test', 5, 60, 120)
         return dataset
 
     @staticmethod
@@ -123,10 +133,11 @@ class TestDataSet:
         assert(dataset.input_data.shape[1] <= (max_size+1)*dataset.history_len)
         assert(dataset.output_data.shape[1] <= max_size)
 
-    def test_finddatapoints(self, dataset):
+    def test_findexamples(self, dataset):
         "The list of data points should have the expected dimensions"
         interval, pred_time = 60, 120
-        data_points = dataset._find_datapoints(5, interval, pred_time)
+        intervals = [60] * 4 + [pred_time]
+        data_points = dataset._find_examples(intervals)
         # (max - future_time - (hist_len - 1)*interval - min) / step + 1
         # = (12000 - 120 - 4*60 - 6000) / 60 = 94
         assert(len(data_points) == 94)
@@ -136,10 +147,33 @@ class TestDataSet:
         assert(min(intervals) <= 2*interval)
         assert(y['time'] - X[-1]['time'] <= 2*pred_time)
 
-    def test_finddatapoints_empty(self, emptydataset):
+    def test_findexamples_empty(self, emptydataset):
         "An empty imageset should not be a problem"
-        data_points = emptydataset._find_datapoints(6, 6, 6)
+        data_points = emptydataset._find_examples([6, 6, 6])
         assert(len(data_points) == 0)
+
+    def test_make_empty(self, emptydataset):
+        "An empty imageset should not be a problem"
+        emptydataset.make()
+        assert(len(emptydataset.input_data) == 0)
+
+    def test_add_toempty(self, emptydataset, imgfile):
+        """Adding an image to an empty dataset should add an image but cannot
+        create an example"""
+        testset = emptydataset.create_set('test', [6, 6, 6])
+        emptydataset.add_image('test', imgfile)
+        assert(len(emptydataset.imgset) == 1)
+        assert(len(testset.input) == 0)
+        assert(len(testset.output) == 0)
+
+    def test_add_newexample(self, dataset, imgfile):
+        "Adding an image to a compatible dataset should create a new example"
+        prev_length = len(dataset.imgset)
+        prev_nb_ex = len(dataset.input_data)
+        dataset.add_image('test', imgfile)
+        assert(len(dataset.imgset) == prev_length + 1)
+        assert(len(dataset.input_data) == prev_nb_ex + 1)
+        assert(len(dataset.output_data) == prev_nb_ex + 1)
 
     def test_split_60_30(self, dataset):
         "default = 70% (66.5) training, 15% (14.25) validation, 15% test"

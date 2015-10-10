@@ -112,7 +112,7 @@ class TestDataSet:
     @pytest.fixture
     def dataset(bigimageset):
         dataset = DataSet.create(bigimageset.fileh, bigimageset)
-        dataset.make('test', 5, 60, 120)
+        dataset.make_set('test', 5, 60, 120)
         return dataset
 
     @staticmethod
@@ -154,13 +154,13 @@ class TestDataSet:
 
     def test_make_empty(self, emptydataset):
         "An empty imageset should not be a problem"
-        emptydataset.make()
+        emptydataset.make_set('empty')
         assert(len(emptydataset.input_data) == 0)
 
     def test_add_toempty(self, emptydataset, imgfile):
         """Adding an image to an empty dataset should add an image but cannot
         create an example"""
-        testset = emptydataset.create_set('test', [6, 6, 6])
+        testset = emptydataset.init_set('test', intervals=[6, 6, 6])
         emptydataset.add_image('test', imgfile)
         assert(len(emptydataset.imgset) == 1)
         assert(len(testset.input) == 0)

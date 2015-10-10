@@ -53,7 +53,7 @@ else:
 
 start_time = time.time()
 logging.info("Creating the data set...")
-dataset.make()
+dataset.make_set('neighbors')
 dataset.split(.8, .2)
 logging.info("Done in %.4fs" % (time.time() - start_time))
 #saving it for later

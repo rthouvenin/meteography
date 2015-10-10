@@ -466,8 +466,8 @@ class DataSet:
             fp = thefile
         return cls(fp, imageset)
 
-    def create_set(self, name, intervals=[600, 600, 1800], nb_ex=None,
-                   hist_len=3, interval=600, future_time=1800):
+    def init_set(self, name, hist_len=3, interval=600, future_time=1800,
+                 intervals=None, nb_ex=None):
         """
         Create a new node in '/examples' of the given `name`, that will store
         the input and output of examples for the given parameters.
@@ -476,14 +476,6 @@ class DataSet:
         ----------
         name : string or None
             The name of the set (for future reference).
-        intervals : a sequence of None
-            The amount of time between each image of an example. The last
-            element is the amount of time between the last image of the input
-            and the output image. If None, the sequence is created from the
-            values of `hist_len`, `interval` and `future_time`.
-        nb_ex : int or None
-            The number of expected examples that this set will contain, or None
-            if unknown.
         hist_len : int
             The number of images to include in the input data.
             Read only if intervals is None.
@@ -493,6 +485,14 @@ class DataSet:
         future_time : int
             The number of seconds between the latest input image
             and the target image. Read only if intervals is None.
+        intervals : a sequence of None
+            The amount of time between each image of an example. The last
+            element is the amount of time between the last image of the input
+            and the output image. If None, the sequence is created from the
+            values of `hist_len`, `interval` and `future_time`.
+        nb_ex : int or None
+            The number of expected examples that this set will contain, or None
+            if unknown.
 
         Return
         ------
@@ -519,18 +519,16 @@ class DataSet:
         self.fileh.flush()
         return set_group
 
-    def make(self, name=None, hist_len=3, interval=600, future_time=1800):
+    def make_set(self, name, hist_len=3, interval=600, future_time=1800,
+                 intervals=None):
         """
-        Constructs a set of training examples.
+        Constructs a set of training examples from all the available images.
         If a node with the same name already exists, it is overwritten.
         The meaning of the parameters is the same as for `create_set`
-        FIXME: rename
         """
         #Create pytables group and arrays
-        if name is None:
-            name = 'h{}i{}t{}'.format(hist_len, interval, future_time)
-        newset = self.create_set(name, None, None,
-                                 hist_len, interval, future_time)
+        newset = self.init_set(name, hist_len, interval, future_time,
+                               intervals, None)
         intervals = newset._v_attrs.intervals
 
         #Find the representations of the data points
@@ -630,7 +628,7 @@ class DataSet:
             ex_data[j-hist_len] = target['time'] - img['time']
         return ex_data
 
-    def add_image(self, setname, imgfile):
+    def add_image(self, set_, imgfile):
         """
         Add an image to the underlying ImageSet, and creates a new example
         using this image as expected prediction of the example.
@@ -643,10 +641,10 @@ class DataSet:
             Filename of the image to add
         """
         img_time = self.imgset.add_from_file(imgfile)
-        set_ = self.fileh.get_node(self.fileh.root.examples, setname)
+        if not hasattr(set_, '_v_attrs'):
+            set_ = self.fileh.get_node(self.fileh.root.examples, set_)
         intervals = set_._v_attrs.intervals
         example = self._find_example(img_time, intervals)
-        print(example)
         if example is not None:
             input_row = self._get_input_data(example)
             set_.input.append((input_row, ))

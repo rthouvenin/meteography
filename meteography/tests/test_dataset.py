@@ -152,10 +152,18 @@ class TestDataSet:
         data_points = emptydataset._find_examples([6, 6, 6])
         assert(len(data_points) == 0)
 
-    def test_make_empty(self, emptydataset):
+    def test_makeset_empty(self, emptydataset):
         "An empty imageset should not be a problem"
         emptydataset.make_set('empty')
         assert(len(emptydataset.input_data) == 0)
+
+    def test_makeinput_last(self, dataset):
+        """Making an input that does not exist in the set of examples, with a
+        target time different from the set"""
+        #11942 is the last image of bigimageset
+        row = dataset.make_input('test', 11942, 666)
+        assert(row is not None)
+        assert(len(row) == 5 * (400+1))
 
     def test_add_toempty(self, emptydataset, imgfile):
         """Adding an image to an empty dataset should add an image but cannot

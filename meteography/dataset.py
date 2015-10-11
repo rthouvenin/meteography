@@ -466,6 +466,26 @@ class DataSet:
             fp = thefile
         return cls(fp, imageset)
 
+    def _dictify(self, fuzzy_img):
+        """
+        Convert fussy_img to dictionary representation.
+        `fuzzy_img` can be a time (int) or dictionary.
+        """
+        if not hasattr(fuzzy_img, '__getitem__'):
+            #fuzzy_img is in fact a time, retrieve the image
+            img = self.imgset.get_image(fuzzy_img)
+        else:
+            img = fuzzy_img
+        return img
+
+    def _nodify(self, fuzzy_node):
+        "Retrieve a set of examples by name, if `fuzzy_node` is not a node."
+        if not hasattr(fuzzy_node, '_v_attrs'):
+            set_ = self.fileh.get_node(self.fileh.root.examples, fuzzy_node)
+        else:
+            set_ = fuzzy_node
+        return set_
+
     def init_set(self, name, hist_len=3, interval=600, future_time=1800,
                  intervals=None, nb_ex=None):
         """
@@ -532,7 +552,7 @@ class DataSet:
         intervals = newset._v_attrs.intervals
 
         #Find the representations of the data points
-        data_points = self._find_examples(intervals)
+        examples = self._find_examples(intervals)
 
         input_data = newset.input
         output_data = newset.output
@@ -540,10 +560,10 @@ class DataSet:
         #Copy the data into the arrays
         input_row = np.empty((nb_feat,), PIXEL_TYPE)
         input_rows = (input_row,)
-        for i, data_point in enumerate(data_points):
-            self._get_input_data(data_point, input_row)
+        for i, example in enumerate(examples):
+            self._get_input_data(example[0], example[1]['time'], input_row)
             input_data.append(input_rows)
-            output_data.append((data_point[1]['data'],))
+            output_data.append((example[1]['data'],))
 
         input_data.flush()
         output_data.flush()
@@ -583,41 +603,77 @@ class DataSet:
 
         Return
         ------
-        tuple(list(filedict), filedict) : a tuple
+        tuple(list(filedict), filedict) : a tuple (or None)
             (input_images, output_value) where input_images is a list of images
             to be used as the input of an example, and output_value is the
             target (expected prediction) of the example
         """
-        if not hasattr(img, '__getitem__'):
-            #img is in fact a time, first retrieve the image
-            img = self.imgset.get_image(img)
+        img = self._dictify(img)
         if img is None:
             return None
         #Search for input images that match the target
-        images_i = [img]
-        hist_len = len(intervals)
-        for j, interval in enumerate(reversed(intervals)):
-            prev_time = images_i[j]['time']
-            img_j = self.imgset.find_closest(prev_time, interval)
-            if img_j:
-                images_i.append(img_j)
-            else:
-                break
+        images = self._find_sequence(img, intervals)
+
         #If we could find all of them, return an example
-        if len(images_i) == hist_len+1:
-            images_i.reverse()
-            inputs = images_i[:hist_len]
-            target = images_i[-1]
+        hist_len = len(intervals)
+        if len(images) == hist_len+1:
+            inputs = images[:hist_len]
+            target = images[-1]
             return inputs, target
         return None
 
-    def _get_input_data(self, example, ex_data=None):
+    def _find_sequence(self, img, intervals):
+        """
+        Find a sequence of images ending with `img` and matching `intervals`
+        """
+        assert img is not None
+        images = [img]
+        for j, interval in enumerate(reversed(intervals)):
+            prev_time = images[j]['time']
+            img_j = self.imgset.find_closest(prev_time, interval)
+            if img_j:
+                images.append(img_j)
+            else:
+                break
+        images.reverse()
+        return images
+
+    def make_input(self, set_, fuzzy_img, target_time):
+        """
+        Try to construct the input of an example such that `img` is the last
+        image.
+
+        Parameters
+        ----------
+        set_ : pytables node or str
+            A set of examples such as returned by `init_set`, or the name of
+            such a set
+        img : dict or int
+            An image such as returned by `ImageSet.get_image`, or the time when
+            the image was taken
+        target_time : int
+            How far in the future the prediction of the returned input will be
+
+        Returns
+        -------
+        array : the feature vector
+        """
+        img = self._dictify(fuzzy_img)
+        if img is None:
+            raise ValueError("Image with time=%d does not exist" % fuzzy_img)
+        set_ = self._nodify(set_)
+        intervals = set_._v_attrs.intervals[:-1]
+        images = self._find_sequence(img, intervals)
+        if len(images) == len(intervals) + 1:
+            return self._get_input_data(images, target_time)
+        return None
+
+    def _get_input_data(self, ex_input, target_time, ex_data=None):
         """
         Write the input pixels and features of `example` in array `ex_data`.
         If `ex_data` is None, a new array is created.
         """
         imgdim = self.img_size
-        ex_input, target = example
         hist_len = len(ex_input)
         if ex_data is None:
             nb_feat = (imgdim+1) * hist_len
@@ -625,7 +681,7 @@ class DataSet:
 
         for j, img in enumerate(ex_input):
             ex_data[imgdim*j:imgdim*(j+1)] = img['data']
-            ex_data[j-hist_len] = target['time'] - img['time']
+            ex_data[j-hist_len] = target_time - img['time']
         return ex_data
 
     def add_image(self, set_, imgfile):
@@ -646,7 +702,7 @@ class DataSet:
         intervals = set_._v_attrs.intervals
         example = self._find_example(img_time, intervals)
         if example is not None:
-            input_row = self._get_input_data(example)
+            input_row = self._get_input_data(example[0], example[1]['time'])
             set_.input.append((input_row, ))
             set_.output.append((example[1]['data'], ))
             set_.input.flush()

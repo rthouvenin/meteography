@@ -107,20 +107,19 @@ class TestImageSet:
         assert(len(img0['data']) <= len(bigimageset))
 
 
+@pytest.fixture
+def dataset(bigimageset):
+    dataset = DataSet.create(bigimageset.fileh, bigimageset)
+    dataset.make_set('test', 5, 60, 120)
+    return dataset
+
+@pytest.fixture
+def emptydataset(emptyimageset):
+    dataset = DataSet.create(emptyimageset.fileh, emptyimageset)
+    return dataset
+
+
 class TestDataSet:
-    @staticmethod
-    @pytest.fixture
-    def dataset(bigimageset):
-        dataset = DataSet.create(bigimageset.fileh, bigimageset)
-        dataset.make_set('test', 5, 60, 120)
-        return dataset
-
-    @staticmethod
-    @pytest.fixture
-    def emptydataset(emptyimageset):
-        dataset = DataSet.create(emptyimageset.fileh, emptyimageset)
-        return dataset
-
     def check_length(self, ds, train, valid, test):
         assert(len(ds.train_input) == train)
         assert(len(ds.train_output) == train)
@@ -154,8 +153,8 @@ class TestDataSet:
 
     def test_makeset_empty(self, emptydataset):
         "An empty imageset should not be a problem"
-        emptydataset.make_set('empty')
-        assert(len(emptydataset.input_data) == 0)
+        newset = emptydataset.make_set('empty')
+        assert(len(newset.input) == 0)
 
     def test_makeinput_last(self, dataset):
         """Making an input that does not exist in the set of examples, with a
@@ -164,6 +163,7 @@ class TestDataSet:
         row = dataset.make_input('test', 11942, 666)
         assert(row is not None)
         assert(len(row) == 5 * (400+1))
+        assert(row[-1] == 666)
 
     def test_add_toempty(self, emptydataset, imgfile):
         """Adding an image to an empty dataset should add an image but cannot

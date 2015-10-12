@@ -21,7 +21,7 @@ from tables.nodes import filenode
 MAX_PIXEL_VALUE = 255
 COLOR_BANDS = ('R', 'G', 'B')
 GREY_BANDS = ('L', )
-PIXEL_TYPE = np.float16
+PIXEL_TYPE = np.float32
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +158,13 @@ class ImageSet:
     def close(self):
         return self.fileh.close()
 
+    def _img_dict(self, name, time, data):
+        return {
+            'name': name,
+            'time': time,
+            'data': data
+        }
+
     def _img_from_row(self, row, reduced=True):
         """
         Create from a row a dictionary with the details of the image in that
@@ -169,11 +176,7 @@ class ImageSet:
             pixels = pca_pixels[row.nrow]
         else:
             pixels = row['pixels']
-        return {
-            'name': row['name'],
-            'time': row['time'],
-            'data': pixels
-        }
+        return self._img_dict(row['name'], row['time'], pixels)
 
     def get_image(self, t, reduced=True):
         """
@@ -206,6 +209,7 @@ class ImageSet:
         row['pixels'] = data
         row.append()
         self._times = None  # invalidate times cache
+        return self._img_dict(name, img_time, data)
 
     def _add_from_file(self, imgfile, name_parser):
         """
@@ -229,8 +233,7 @@ class ImageSet:
                 data = data.flatten()
 
             img_time = name_parser(imgfile)
-            self._add_image(imgfile, img_time, data)
-            return img_time
+            return self._add_image(imgfile, img_time, data)
         except Exception as e:
             logger.warn("Ignoring file %s: %s" % (imgfile, e))
 
@@ -251,9 +254,9 @@ class ImageSet:
         int : The time (Unix epoch) when the image was taken, that can be used
             to identify it
         """
-        img_time = self._add_from_file(imgfile, name_parser)
+        img = self._add_from_file(imgfile, name_parser)
         self.table.flush()
-        return img_time
+        return img
 
     def add_images(self, directory, name_parser=parse_timestamp,
                    recursive=True):
@@ -570,6 +573,7 @@ class DataSet:
         self.input_data = input_data  # FIXME don't store this in attributes
         self.output_data = output_data
         self.history_len = hist_len
+        return newset
 
     def _find_examples(self, intervals):
         """
@@ -638,7 +642,7 @@ class DataSet:
         images.reverse()
         return images
 
-    def make_input(self, set_, fuzzy_img, target_time):
+    def make_input(self, set_, fuzzy_img, target_time=None):
         """
         Try to construct the input of an example such that `img` is the last
         image.
@@ -663,9 +667,12 @@ class DataSet:
             raise ValueError("Image with time=%d does not exist" % fuzzy_img)
         set_ = self._nodify(set_)
         intervals = set_._v_attrs.intervals[:-1]
+        if target_time is None:
+            target_time = set_._v_attrs.intervals[-1]
         images = self._find_sequence(img, intervals)
         if len(images) == len(intervals) + 1:
-            return self._get_input_data(images, target_time)
+            prediction_time = target_time + images[-1]['time']
+            return self._get_input_data(images, prediction_time)
         return None
 
     def _get_input_data(self, ex_input, target_time, ex_data=None):
@@ -696,17 +703,18 @@ class DataSet:
         imgfile : str
             Filename of the image to add
         """
-        img_time = self.imgset.add_from_file(imgfile)
+        img = self.imgset.add_from_file(imgfile)
         if not hasattr(set_, '_v_attrs'):
             set_ = self.fileh.get_node(self.fileh.root.examples, set_)
         intervals = set_._v_attrs.intervals
-        example = self._find_example(img_time, intervals)
+        example = self._find_example(img, intervals)
         if example is not None:
             input_row = self._get_input_data(example[0], example[1]['time'])
             set_.input.append((input_row, ))
             set_.output.append((example[1]['data'], ))
             set_.input.flush()
             set_.output.flush()
+        return img
 
     def input_img(self, i, j):
         """
@@ -717,13 +725,13 @@ class DataSet:
         img = self.input_data[i, j*self.img_size:(j+1)*self.img_size]
         return img.reshape(self.img_shape)
 
-    def output_img(self, i):
+    def output_img(self, set_, i):
         """
         Return the pixels the `i`th output image,
         with its original shape (directly displayable by matplotlib)
         """
-        assert 0 <= i < len(self.output_data)
-        img = self.output_data[i]
+        set_ = self._nodify(set_)
+        img = set_.output[i]
         return img.reshape(self.img_shape)
 
     def split(self, train=.7, valid=.15, shuffle=False):
@@ -782,10 +790,3 @@ class DataSet:
         if self.is_split:
             return self.test_input, self.test_output
         return [], []
-
-    def __getstate__(self):
-        odict = self.__dict__.copy()
-        split_keys = ['train_input', 'valid_input', 'test_input',
-                      'train_output', 'valid_output', 'test_output']
-        odict.update(dict.fromkeys(split_keys))
-        return odict

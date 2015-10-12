@@ -101,7 +101,7 @@ class TestImageSet:
         self.helper_closest_nomatch(imageset, 4000, 50)
 
     def test_reduce_fewimg(self, bigimageset):
-        "More pixels than images"
+        "More pixels than images should lead to less components than images"
         bigimageset.reduce_dim()
         img0 = next(iter(bigimageset))
         assert(len(img0['data']) <= len(bigimageset))

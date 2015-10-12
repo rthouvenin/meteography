@@ -208,6 +208,9 @@ class ImageSet:
         row['time'] = img_time
         row['pixels'] = data
         row.append()
+        if self.pca is not None:
+            reduced = self.pca.transform([data])
+            self.fileh.root.images.pcapixels.append(reduced)
         self._times = None  # invalidate times cache
         return self._img_dict(name, img_time, data)
 
@@ -311,7 +314,7 @@ class ImageSet:
                 sample[i] = img['pixels']
         return sample
 
-    def reduce_dim(self, sample_size=1000):
+    def reduce_dim(self, sample_size=1000, n_components=None):
         """
         Apply PCA transformation to each image of the set.
 
@@ -334,7 +337,8 @@ class ImageSet:
 
         #Compute PCA components and save them
         sample = self._sample(sample_size)
-        self.pca = PCA().fit(sample) # FIXME: choose an algo
+        #FIXME: choose an algo
+        self.pca = PCA(n_components=n_components).fit(sample)
         ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
         fn = filenode.new_node(self.fileh, where='/images', name='pcamodel')
         pickle.dump(self.pca, fn, pickle.HIGHEST_PROTOCOL)
@@ -343,15 +347,15 @@ class ImageSet:
         #Apply PCA transformation to all the images in chunks
         self.img_size = self.pca.components_.shape[0]
         pixels = self.table.cols.pixels
-        pca_pixels = self.fileh.create_array('/images', 'pcapixels',
-                                             shape=(nb_images, self.img_size),
-                                             atom=tables.FloatAtom())
+        pca_pixels = self.fileh.create_earray('/images', 'pcapixels',
+                                              shape=(0, self.img_size),
+                                              atom=tables.FloatAtom())
         chunk_size = sample_size
         nb_chunks = nb_images / chunk_size
         for c in range(nb_chunks):
             s = c * chunk_size
             e = min(nb_images, s + chunk_size)
-            pca_pixels[s:e] = self.pca.transform(pixels[s:e])
+            pca_pixels.append(self.pca.transform(pixels[s:e]))
             pca_pixels.flush()
 
     def recover_images(self, pca_pixels):

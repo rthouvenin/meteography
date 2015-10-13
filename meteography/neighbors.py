@@ -39,16 +39,17 @@ class NearestNeighbors:
     def _get_batch(self, b, extra_row):
         start = b * self.batch_len
         end = min(start+self.batch_len, len(self.X))
-        self.batch[:end-start] = self.X[start:end]
-        if self.nb_batch > 1:
-            #Copy the extra_row only if needed to save some cycles
-            if extra_row is None:
-                self.extra_row = 0
-                self.batch[-1] = self.X[self.extra_row]
-            elif extra_row != self.extra_row:
-                self.extra_row = extra_row
-                self.batch[-1] = self.X[self.extra_row]
-        return self.batch
+        actual_len = end - start
+        self.batch[:actual_len] = self.X[start:end]
+        has_extra = 0
+        if extra_row is not None:
+            has_extra = 1
+            self.batch[actual_len] = self.X[extra_row]
+
+        if actual_len+has_extra == self.batch.shape[0]:
+            return self.batch
+        else:
+            return self.batch[:actual_len+has_extra]
 
     def predict(self, input_row):
         self._reset_nb_batch()
@@ -56,8 +57,8 @@ class NearestNeighbors:
         for b in range(self.nb_batch):
             batch = self._get_batch(b, nearest)
             self.sknn.fit(batch)
-            nearest = self.sknn.kneighbors([input_row], return_distance=False)
-            nearest = nearest[0][0]
-            if self.nb_batch > 1 and nearest != self.batch_len:
-                nearest = (b-1) * self.batch_len + nearest
+            i_batch = self.sknn.kneighbors([input_row], return_distance=False)
+            i_batch = i_batch[0][0]
+            if i_batch != (batch.shape[0]-1) or b == 0:
+                nearest = b * self.batch_len + i_batch
         return self.y[nearest]

@@ -8,6 +8,14 @@ from meteography.neighbors import NearestNeighbors
 
 
 @pytest.fixture
+def small_batch(request):
+    backup = NearestNeighbors.BATCH_SIZE
+    NearestNeighbors.BATCH_SIZE = 15
+    def fin():
+        NearestNeighbors.BATCH_SIZE = backup
+    request.addfinalizer(fin)
+
+@pytest.fixture
 def fixed_array():
     nb_ex = 22
     nb_feat = 3
@@ -30,16 +38,14 @@ def variable_array(request, tmpdir_factory):
     request.addfinalizer(fin)
     return fp.root.X, fp.root.y
 
-def test_init_batch(fixed_array):
+
+def test_init_batch(small_batch, fixed_array):
     "Check computation of batch"
-    backup = NearestNeighbors.BATCH_SIZE
-    NearestNeighbors.BATCH_SIZE = 15
     nn = NearestNeighbors()
     nn.fit(*fixed_array)
     assert(nn.batch_len == 5)  # (15 / 3)
     assert(nn.nb_batch == 5)  # 22 / 5 + 1
     assert(nn.batch.shape == (5+1, 3))
-    NearestNeighbors.BATCH_SIZE = backup
 
 
 def test_predict_singlebatch(fixed_array):
@@ -50,15 +56,12 @@ def test_predict_singlebatch(fixed_array):
     assert(y == 17)
 
 
-def test_predict_multibatch(fixed_array):
+def test_predict_multibatch(small_batch, fixed_array):
     "An existing row should be found, only one batch"
-    backup = NearestNeighbors.BATCH_SIZE
-    NearestNeighbors.BATCH_SIZE = 15
     nn = NearestNeighbors()
     nn.fit(*fixed_array)
     y = nn.predict(np.array([17, 17, 17]))
     assert(y == 17)
-    NearestNeighbors.BATCH_SIZE = backup
 
 
 def test_predict_notexisting(fixed_array):

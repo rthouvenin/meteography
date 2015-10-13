@@ -158,11 +158,12 @@ class ImageSet:
     def close(self):
         return self.fileh.close()
 
-    def _img_dict(self, name, time, data):
+    def _img_dict(self, name, time, data, img_id):
         return {
             'name': name,
             'time': time,
-            'data': data
+            'data': data,
+            'id': img_id
         }
 
     def _img_from_row(self, row, reduced=True):
@@ -176,7 +177,8 @@ class ImageSet:
             pixels = pca_pixels[row.nrow]
         else:
             pixels = row['pixels']
-        return self._img_dict(row['name'], row['time'], pixels)
+        img = self._img_dict(row['name'], row['time'], pixels, row.nrow)
+        return img
 
     def get_image(self, t, reduced=True):
         """
@@ -204,6 +206,7 @@ class ImageSet:
 
     def _add_image(self, name, img_time, data):
         row = self.table.row
+        img_id = row.nrow
         row['name'] = name
         row['time'] = img_time
         row['pixels'] = data
@@ -211,8 +214,9 @@ class ImageSet:
         if self.pca is not None:
             reduced = self.pca.transform([data])
             self.fileh.root.images.pcapixels.append(reduced)
+            data = reduced[0]
         self._times = None  # invalidate times cache
-        return self._img_dict(name, img_time, data)
+        return self._img_dict(name, img_time, data, img_id)
 
     def _add_from_file(self, imgfile, name_parser):
         """
@@ -539,6 +543,8 @@ class DataSet:
         imgdim = self.img_size
         nb_feat = (imgdim+1) * hist_len
         pixel_atom = tables.Atom.from_sctype(PIXEL_TYPE)
+        self.fileh.create_earray(set_group, 'img_refs', atom=tables.IntAtom(),
+                                 shape=(0, hist_len+1), expectedrows=nb_ex)
         self.fileh.create_earray(set_group, 'input', atom=pixel_atom,
                                  shape=(0, nb_feat), expectedrows=nb_ex)
         self.fileh.create_earray(set_group, 'output', atom=pixel_atom,
@@ -561,17 +567,22 @@ class DataSet:
         #Find the representations of the data points
         examples = self._find_examples(intervals)
 
+        img_refs = newset.img_refs
         input_data = newset.input
         output_data = newset.output
         nb_feat = input_data.shape[1]
         #Copy the data into the arrays
         input_row = np.empty((nb_feat,), PIXEL_TYPE)
-        input_rows = (input_row,)
+        input_rows = [input_row]
         for i, example in enumerate(examples):
+            ids = [img['id'] for img in example[0]]
+            ids.append(example[1]['id'])
+            img_refs.append([ids])
             self._get_input_data(example[0], example[1]['time'], input_row)
             input_data.append(input_rows)
-            output_data.append((example[1]['data'],))
+            output_data.append([example[1]['data']])
 
+        img_refs.flush()
         input_data.flush()
         output_data.flush()
         self.input_data = input_data  # FIXME don't store this in attributes
@@ -713,9 +724,13 @@ class DataSet:
         intervals = set_._v_attrs.intervals
         example = self._find_example(img, intervals)
         if example is not None:
+            ids = [img['id'] for img in example[0]]
+            ids.append(example[1]['id'])
+            set_.img_refs.append([ids])
             input_row = self._get_input_data(example[0], example[1]['time'])
             set_.input.append((input_row, ))
             set_.output.append((example[1]['data'], ))
+            set_.img_refs.flush()
             set_.input.flush()
             set_.output.flush()
         return img

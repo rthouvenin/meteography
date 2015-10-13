@@ -9,18 +9,19 @@ import pytest
 from meteography.dataset import DataSet
 from meteography.dataset import ImageSet
 
+IMG_SIZE = 20
 
 def make_filedict(t, jitter=False):
     return {
         'name': str(t) + '.png',
         'img_time': t + (random.randint(-2, 2) if jitter else 0),
-        'data': np.random.rand(20*20)
+        'data': np.random.rand(IMG_SIZE*IMG_SIZE)
     }
 
 
 def imgset_fixture(request, tmpdir_factory, fname, images):
     filename = tmpdir_factory.mktemp('h5').join(fname).strpath
-    imageset = ImageSet.create(filename, (20, 20))
+    imageset = ImageSet.create(filename, (IMG_SIZE, IMG_SIZE))
     for img in images:
         imageset._add_image(**img)
     imageset.fileh.flush()
@@ -34,7 +35,7 @@ def imgset_fixture(request, tmpdir_factory, fname, images):
 @pytest.fixture(scope='session')
 def imgfile(tmpdir_factory):
     filename = tmpdir_factory.mktemp('img').join('12000.jpg').strpath
-    pixels = np.zeros((20, 20))
+    pixels = np.zeros((IMG_SIZE, IMG_SIZE))
     img = Image.fromarray(pixels, mode='L')
     img.save(filename)
     return filename
@@ -65,6 +66,19 @@ class TestImageSet:
     def helper_closest_nomatch(self, imageset, start, interval):
         closest = imageset.find_closest(start, interval)
         assert(closest is None)
+
+    def test_addfromfile(self, imageset, imgfile):
+        prev_len = len(imageset)
+        imageset.add_from_file(imgfile)
+        assert(len(imageset) == prev_len+1)
+
+    def test_addfromfile_reduced(self, bigimageset, imgfile):
+        bigimageset.reduce_dim()
+        prev_len = len(bigimageset)
+        bigimageset.add_from_file(imgfile)
+        new_len = len(bigimageset)
+        assert(new_len == prev_len+1)
+        assert(len(bigimageset.fileh.root.images.pcapixels) == new_len)
 
     def test_sort(self, imageset):
         "The first element should have the smallest time"
@@ -104,7 +118,7 @@ class TestImageSet:
         "More pixels than images should lead to less components than images"
         bigimageset.reduce_dim()
         img0 = next(iter(bigimageset))
-        assert(len(img0['data']) <= len(bigimageset))
+        assert(len(img0['data']) <= len(bigimageset) < IMG_SIZE*IMG_SIZE)
 
 
 @pytest.fixture
@@ -162,7 +176,7 @@ class TestDataSet:
         #11942 is the last image of bigimageset
         row = dataset.make_input('test', 11942, 666)
         assert(row is not None)
-        assert(len(row) == 5 * (400+1))
+        assert(len(row) == 5 * (IMG_SIZE*IMG_SIZE+1))
         assert(row[-1] == 666)
 
     def test_add_toempty(self, emptydataset, imgfile):

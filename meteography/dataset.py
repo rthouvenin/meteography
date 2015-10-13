@@ -166,13 +166,13 @@ class ImageSet:
             'id': img_id
         }
 
-    def _img_from_row(self, row, reduced=True):
+    def _img_from_row(self, row, ret_reduced=True):
         """
         Create from a row a dictionary with the details of the image in that
-        row. If `reduced` is True and the ImageSet was reduced, the key 'data'
-        will contain the PCA-transformed data.
+        row. If `ret_reduced` is True and the ImageSet was reduced, the key
+        'data' will contain the PCA-transformed data.
         """
-        if reduced and self.pca is not None:
+        if ret_reduced and self.pca is not None:
             pca_pixels = self.fileh.root.images.pcapixels
             pixels = pca_pixels[row.nrow]
         else:
@@ -180,16 +180,16 @@ class ImageSet:
         img = self._img_dict(row['name'], row['time'], pixels, row.nrow)
         return img
 
-    def get_image(self, t, reduced=True):
+    def get_image(self, t, ret_reduced=True):
         """
         Returns as a dictionary the details of the image taken at time `t`.
-        If `reduced` is True and the ImageSet was reduced, the key 'data'
+        If `ret_reduced` is True and the ImageSet was reduced, the key 'data'
         will contain the PCA-transformed data.
         """
         rows = self.table.where('time == t')
         row = next(rows, None)
         if row:
-            return self._img_from_row(row, reduced)
+            return self._img_from_row(row, ret_reduced)
         return None
 
     def __iter__(self):
@@ -204,7 +204,7 @@ class ImageSet:
         """Return the number of images in the set."""
         return self.table.nrows
 
-    def _add_image(self, name, img_time, data):
+    def _add_image(self, name, img_time, data, ret_reduced=True):
         row = self.table.row
         img_id = row.nrow
         row['name'] = name
@@ -214,37 +214,36 @@ class ImageSet:
         if self.pca is not None:
             reduced = self.pca.transform([data])
             self.fileh.root.images.pcapixels.append(reduced)
-            data = reduced[0]
+            if ret_reduced:
+                data = reduced[0]
         self._times = None  # invalidate times cache
         return self._img_dict(name, img_time, data, img_id)
 
-    def _add_from_file(self, imgfile, name_parser):
+    def _add_from_file(self, imgfile, name_parser, ret_reduced=True):
         """
         `add_from_file` without flushing the table.
         """
-        try:
-            with open(imgfile, 'rb') as fp:
-                img = PIL.Image.open(fp)
-                img_shape = img.size[1], img.size[0]
-                if img_shape != self.img_shape[:2]:
-                    raise ValueError("The image has shape %s instead of %s"
-                                     % (img_shape, self.img_shape[:2]))
-                #Convert the image to greyscale or RGB if necessary
-                expected_bands = GREY_BANDS if self.is_grey else COLOR_BANDS
-                img_bands = img.getbands()
-                if img_bands != expected_bands:
-                    img = img.convert(''.join(expected_bands))
-                data = np.array(img, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
-            #Flatten the data in case of RGB tuples
-            if data.ndim > 1:
-                data = data.flatten()
+        with open(imgfile, 'rb') as fp:
+            img = PIL.Image.open(fp)
+            img_shape = img.size[1], img.size[0]
+            if img_shape != self.img_shape[:2]:
+                raise ValueError("The image has shape %s instead of %s"
+                                 % (img_shape, self.img_shape[:2]))
+            #Convert the image to greyscale or RGB if necessary
+            expected_bands = GREY_BANDS if self.is_grey else COLOR_BANDS
+            img_bands = img.getbands()
+            if img_bands != expected_bands:
+                img = img.convert(''.join(expected_bands))
+            data = np.array(img, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
+        #Flatten the data in case of RGB tuples
+        if data.ndim > 1:
+            data = data.flatten()
 
-            img_time = name_parser(imgfile)
-            return self._add_image(imgfile, img_time, data)
-        except Exception as e:
-            logger.warn("Ignoring file %s: %s" % (imgfile, e))
+        img_time = name_parser(imgfile)
+        return self._add_image(imgfile, img_time, data, ret_reduced)
 
-    def add_from_file(self, imgfile, name_parser=parse_timestamp):
+    def add_from_file(self, imgfile, name_parser=parse_timestamp,
+                      ret_reduced=True):
         """
         Add an image to the set.
 
@@ -255,13 +254,16 @@ class ImageSet:
         name_parser : callable
             A function that takes an absolute filename as argument and
             returns the timestamp of when the photo was taken
+        ret_reduced : bool
+            Whether the returned image should come with reduced pixels
+            (if available)
 
         Return
         ------
         int : The time (Unix epoch) when the image was taken, that can be used
             to identify it
         """
-        img = self._add_from_file(imgfile, name_parser)
+        img = self._add_from_file(imgfile, name_parser, ret_reduced)
         self.table.flush()
         return img
 
@@ -287,7 +289,10 @@ class ImageSet:
                 if recursive:
                     self.add_images(fullname, name_parser)
             else:
-                self._add_from_file(fullname, name_parser)
+                try:
+                    self._add_from_file(fullname, name_parser)
+                except Exception as e:
+                    logger.warn("Ignoring file %s: %s" % (fullname, e))
         self.table.flush()
 
     def sort(self):
@@ -373,11 +378,19 @@ class ImageSet:
         pixels_out = self.pca.inverse_transform(pca_pixels)
         return pixels_out.clip(0, 1, pixels_out)
 
-    def find_closest(self, start, interval):
+    def find_closest(self, start, interval, ret_reduced=True):
         """
         Search for the image with its time attribute the closest to
         `start-interval`, constrained in `[start-2*interval, start[`.
         This is a binary search in O(log n), except the first time it is called
+
+        Parameters
+        ----------
+        start : int
+        interval : int
+        ret_reduced : bool
+            Whether the returned image should come with reduced pixels
+            (if available)
 
         Return
         ------
@@ -402,12 +415,12 @@ class ImageSet:
 
         if target - left_time < right_time - target:
             if left_time >= mintarget:
-                return self.get_image(left_time)
+                return self.get_image(left_time, ret_reduced)
             else:  # At this point we can deduce that right_time >= start
                 return None
         else:
             if right_time < start:
-                return self.get_image(right_time)
+                return self.get_image(right_time, ret_reduced)
             else:  # At this point we can deduce that left_time < mintarget
                 return None
 
@@ -427,7 +440,6 @@ class DataSet:
         self.fileh = fileh
         self.imgset = imageset
         self.img_shape = imageset.img_shape
-        self.img_size = imageset.img_size
         self.is_split = False
 
     @classmethod
@@ -498,7 +510,7 @@ class DataSet:
         return set_
 
     def init_set(self, name, hist_len=3, interval=600, future_time=1800,
-                 intervals=None, nb_ex=None):
+                 intervals=None, reduced=None, nb_ex=None):
         """
         Create a new node in '/examples' of the given `name`, that will store
         the input and output of examples for the given parameters.
@@ -516,11 +528,14 @@ class DataSet:
         future_time : int
             The number of seconds between the latest input image
             and the target image. Read only if intervals is None.
-        intervals : a sequence of None
+        intervals : a sequence or None
             The amount of time between each image of an example. The last
             element is the amount of time between the last image of the input
             and the output image. If None, the sequence is created from the
             values of `hist_len`, `interval` and `future_time`.
+        reduced : bool
+            Whether the input and output arrays should store dim-reduced images
+            If None, defaults to whether the underlying ImageSet is reduced
         nb_ex : int or None
             The number of expected examples that this set will contain, or None
             if unknown.
@@ -533,14 +548,20 @@ class DataSet:
             intervals = [interval] * (hist_len-1) + [future_time]
         else:
             hist_len = len(intervals)
+        if reduced is None:
+            reduced = self.imgset.pca is not None
+        if reduced is True and self.imgset.pca is None:
+            raise ValueError("""'reduced' is True but the imageset is not
+                             reduced""")
 
         ex_group = self.fileh.root.examples
         if name in ex_group:
             self.fileh.remove_node(ex_group, name, recursive=True)
         set_group = self.fileh.create_group(ex_group, name)
         set_group._v_attrs.intervals = intervals
+        set_group._v_attrs.reduced = reduced
 
-        imgdim = self.img_size
+        imgdim = self.imgset.img_size if reduced else np.prod(self.img_shape)
         nb_feat = (imgdim+1) * hist_len
         pixel_atom = tables.Atom.from_sctype(PIXEL_TYPE)
         self.fileh.create_earray(set_group, 'img_refs', atom=tables.IntAtom(),
@@ -553,7 +574,7 @@ class DataSet:
         return set_group
 
     def make_set(self, name, hist_len=3, interval=600, future_time=1800,
-                 intervals=None):
+                 intervals=None, reduced=None):
         """
         Constructs a set of training examples from all the available images.
         If a node with the same name already exists, it is overwritten.
@@ -561,11 +582,12 @@ class DataSet:
         """
         #Create pytables group and arrays
         newset = self.init_set(name, hist_len, interval, future_time,
-                               intervals, None)
+                               intervals, reduced, None)
         intervals = newset._v_attrs.intervals
+        reduced = newset._v_attrs.reduced
 
         #Find the representations of the data points
-        examples = self._find_examples(intervals)
+        examples = self._find_examples(intervals, reduced)
 
         img_refs = newset.img_refs
         input_data = newset.input
@@ -590,7 +612,7 @@ class DataSet:
         self.history_len = hist_len
         return newset
 
-    def _find_examples(self, intervals):
+    def _find_examples(self, intervals, reduced=True):
         """
         Build a list of tuples (input_images, output_value) to be used for
         training or validation.
@@ -603,12 +625,12 @@ class DataSet:
         assert all(intervals)
         examples = []
         for i, img in enumerate(self.imgset):
-            example = self._find_example(img, intervals)
+            example = self._find_example(img, intervals, reduced)
             if example is not None:
                 examples.append(example)
         return examples
 
-    def _find_example(self, img, intervals):
+    def _find_example(self, img, intervals, reduced=True):
         """
         Try to find a single example that has `img` as a target
 
@@ -631,7 +653,7 @@ class DataSet:
         if img is None:
             return None
         #Search for input images that match the target
-        images = self._find_sequence(img, intervals)
+        images = self._find_sequence(img, intervals, reduced)
 
         #If we could find all of them, return an example
         hist_len = len(intervals)
@@ -641,7 +663,7 @@ class DataSet:
             return inputs, target
         return None
 
-    def _find_sequence(self, img, intervals):
+    def _find_sequence(self, img, intervals, reduced=True):
         """
         Find a sequence of images ending with `img` and matching `intervals`
         """
@@ -649,7 +671,7 @@ class DataSet:
         images = [img]
         for j, interval in enumerate(reversed(intervals)):
             prev_time = images[j]['time']
-            img_j = self.imgset.find_closest(prev_time, interval)
+            img_j = self.imgset.find_closest(prev_time, interval, reduced)
             if img_j:
                 images.append(img_j)
             else:
@@ -682,9 +704,10 @@ class DataSet:
             raise ValueError("Image with time=%d does not exist" % fuzzy_img)
         set_ = self._nodify(set_)
         intervals = set_._v_attrs.intervals[:-1]
+        reduced = set_._v_attrs.reduced
         if target_time is None:
             target_time = set_._v_attrs.intervals[-1]
-        images = self._find_sequence(img, intervals)
+        images = self._find_sequence(img, intervals, reduced)
         if len(images) == len(intervals) + 1:
             prediction_time = target_time + images[-1]['time']
             return self._get_input_data(images, prediction_time)
@@ -695,7 +718,7 @@ class DataSet:
         Write the input pixels and features of `example` in array `ex_data`.
         If `ex_data` is None, a new array is created.
         """
-        imgdim = self.img_size
+        imgdim = len(ex_input[0]['data'])
         hist_len = len(ex_input)
         if ex_data is None:
             nb_feat = (imgdim+1) * hist_len
@@ -718,11 +741,13 @@ class DataSet:
         imgfile : str
             Filename of the image to add
         """
-        img = self.imgset.add_from_file(imgfile)
         if not hasattr(set_, '_v_attrs'):
             set_ = self.fileh.get_node(self.fileh.root.examples, set_)
         intervals = set_._v_attrs.intervals
-        example = self._find_example(img, intervals)
+        reduced = set_._v_attrs.reduced
+        img = self.imgset.add_from_file(imgfile, ret_reduced=reduced)
+        print(img)
+        example = self._find_example(img, intervals, reduced)
         if example is not None:
             ids = [img['id'] for img in example[0]]
             ids.append(example[1]['id'])
@@ -735,13 +760,14 @@ class DataSet:
             set_.output.flush()
         return img
 
-    def input_img(self, i, j):
+    def input_img(self, set_, i, j):
         """
         Return the pixels the `j`th image from example `i` in the input data,
         with its original shape (directly displayable by matplotlib)
         """
-        assert 0 <= i < len(self.input_data) and 0 <= j < self.history_len
-        img = self.input_data[i, j*self.img_size:(j+1)*self.img_size]
+        set_ = self._nodify(set_)
+        imgdim = set_.output.shape[1]
+        img = self.input_data[i, j*imgdim:(j+1)*imgdim]
         return img.reshape(self.img_shape)
 
     def output_img(self, set_, i):

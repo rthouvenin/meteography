@@ -197,6 +197,17 @@ class TestDataSet:
         assert(len(dataset.input_data) == prev_nb_ex + 1)
         assert(len(dataset.output_data) == prev_nb_ex + 1)
 
+    def test_add_afterreduced(self, dataset, imgfile):
+        """Adding an image to a dataset after the imageset was reduced should
+        not be a problem"""
+        prev_length = len(dataset.imgset)
+        prev_nb_ex = len(dataset.input_data)
+        dataset.imgset.reduce_dim()
+        dataset.add_image('test', imgfile)
+        assert(len(dataset.imgset) == prev_length + 1)
+        assert(len(dataset.input_data) == prev_nb_ex + 1)
+        assert(len(dataset.output_data) == prev_nb_ex + 1)
+
     def test_split_60_30(self, dataset):
         "default = 70% (66.5) training, 15% (14.25) validation, 15% test"
         dataset.split()

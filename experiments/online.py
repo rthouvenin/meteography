@@ -42,7 +42,7 @@ for filename in filenames:
     filepath = os.path.join(args.datapath, filename)
     img = dataset.add_image(onlineset, filepath)
     expected = expects[e]
-    expects[e] = img['data']
+    expects[e] = imageset.recover_images([img['data']])[0]
     e = (e + 1) % len(expects)
 
     new_input = dataset.make_input(onlineset, img)
@@ -52,7 +52,13 @@ for filename in filenames:
         pred_times.append(time.time() - start_time)
         p = len(pred_times)
         print("Pred° %d in %.3fs" % (p, pred_times[-1]))
+        output = imageset.recover_images([output])[0]
         imgcmp = analysis.compare_outputs(expected, output, dataset.img_shape)
         cmpfile = os.path.join(args.resultpath, "%d.jpg" % p)
         plt.imsave(cmpfile, imgcmp)
+        if p % 300 == 0:
+            start_time = time.time()
+            dataset.reduce_dim()
+            print("Dim reduction in %.3fs" % (time.time() - start_time))
+            neighbors.fit(onlineset.input, onlineset.output)
 imageset.close()

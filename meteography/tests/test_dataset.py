@@ -67,12 +67,33 @@ class TestImageSet:
         closest = imageset.find_closest(start, interval)
         assert(closest is None)
 
+    def test_pixelsat_int(self, imageset):
+        "get_image and get_pixels_at should produce same pixels"
+        img1 = imageset.get_image(42)
+        pix2 = imageset.get_pixels_at(img1['id'])
+        assert(np.allclose(img1['data'], pix2))
+
+    def test_pixelsat_seq(self, imageset):
+        "Read pixels from a tuple of indices"
+        img1 = imageset.get_image(42)
+        pixels = imageset.get_pixels_at((img1['id'], 0))
+        assert(np.allclose(img1['data'], pixels[0]))
+        assert(not np.allclose(pixels[1], pixels[0]))
+
+    def test_pixelsat_seq_reduced(self, imageset):
+        "Read reduced pixels from a tuple of indices"
+        imageset.reduce_dim()
+        self.test_pixelsat_seq(imageset)
+
     def test_addfromfile(self, imageset, imgfile):
+        "Adding a file should increase the length of the set"
         prev_len = len(imageset)
-        imageset.add_from_file(imgfile)
+        img = imageset.add_from_file(imgfile)
         assert(len(imageset) == prev_len+1)
+        assert(img['id'] == prev_len)
 
     def test_addfromfile_reduced(self, bigimageset, imgfile):
+        "If the set is reduced, both raw and reduced pixels should be added"
         bigimageset.reduce_dim()
         prev_len = len(bigimageset)
         bigimageset.add_from_file(imgfile)
@@ -116,9 +137,47 @@ class TestImageSet:
 
     def test_reduce_fewimg(self, bigimageset):
         "More pixels than images should lead to less components than images"
+        prev_length = len(bigimageset)
         bigimageset.reduce_dim()
         img0 = next(iter(bigimageset))
+        assert(len(bigimageset) == prev_length)
+        assert(len(bigimageset.fileh.root.images.pcapixels) == prev_length)
         assert(len(img0['data']) <= len(bigimageset) < IMG_SIZE*IMG_SIZE)
+
+    def test_reduce_twice(self, bigimageset):
+        "Reducing twice the same set should not cause any problem"
+        prev_length = len(bigimageset)
+        bigimageset.reduce_dim()
+        bigimageset.reduce_dim()
+        img0 = next(iter(bigimageset))
+        assert(len(bigimageset) == prev_length)
+        assert(len(bigimageset.fileh.root.images.pcapixels) == prev_length)
+        assert(len(img0['data']) <= len(bigimageset) < IMG_SIZE*IMG_SIZE)
+
+    def test_reduce_smallsample(self, bigimageset):
+        "More images than sample size"
+        prev_length = len(bigimageset)
+        sample_size = prev_length / 2
+        bigimageset.reduce_dim(sample_size)
+        img0 = next(iter(bigimageset))
+        assert(len(bigimageset) == prev_length)
+        assert(len(bigimageset.fileh.root.images.pcapixels) == prev_length)
+        assert(len(img0['data']) == sample_size)
+
+    def test_reduce_manyimg(self, bigimageset):
+        """More images than pixels but less than sample size
+        won't reduce the dimensionality, even after a first reduction"""
+        bigimageset.reduce_dim()
+        images = [make_filedict(t, True) for t in range(12000, 36000, 60)]
+        for img in images:
+            bigimageset._add_image(**img)
+        bigimageset.fileh.flush()
+        prev_length = len(bigimageset)
+        bigimageset.reduce_dim(450)
+        img0 = next(iter(bigimageset))
+        assert(len(bigimageset) == prev_length)
+        assert(len(bigimageset.fileh.root.images.pcapixels) == prev_length)
+        assert(len(img0['data']) == IMG_SIZE*IMG_SIZE)
 
 
 @pytest.fixture
@@ -207,6 +266,18 @@ class TestDataSet:
         assert(len(dataset.imgset) == prev_length + 1)
         assert(len(dataset.input_data) == prev_nb_ex + 1)
         assert(len(dataset.output_data) == prev_nb_ex + 1)
+
+    def test_reducedim(self, dataset):
+        testset = dataset.fileh.root.examples.test
+        prev_refs_shape = testset.img_refs.shape
+        prev_nb_feat = testset.input.shape[1]
+        prev_imgdim = testset.output.shape[1]
+        dataset.reduce_dim()
+        assert(testset.img_refs.shape == prev_refs_shape)
+        assert(len(testset.input) == prev_refs_shape[0])
+        assert(len(testset.output) == prev_refs_shape[0])
+        assert(testset.input.shape[1] < prev_nb_feat)
+        assert(testset.output.shape[1] < prev_imgdim)
 
     def test_split_60_30(self, dataset):
         "default = 70% (66.5) training, 15% (14.25) validation, 15% test"

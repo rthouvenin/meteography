@@ -192,6 +192,37 @@ class ImageSet:
             return self._img_from_row(row, ret_reduced)
         return None
 
+    def _pcapixels(self, idx):
+        return self.fileh.root.images.pcapixels[idx, :]
+
+    def _realpixels(self, idx):
+        rows = self.table.itersequence(idx)
+        return np.array([r['pixels'] for r in rows])
+
+    def get_pixels_at(self, idx, ret_reduced=True):
+        """
+        Retrieves the pixels of one or more images referenced by indices.
+
+        Parameters
+        ----------
+        idx : integral number or sequence of integral numbers
+            The indices of the images
+        ret_reduced : bool
+            If True and the ImageSet was reduced, the PCA-transformed data
+            is returned
+        """
+        if ret_reduced and self.pca is not None:
+            source = self._pcapixels
+        else:
+            source = self._realpixels
+
+        #numpy scalars also have a __getitem__ ...
+        if hasattr(idx, '__getitem__') and not np.isscalar(idx):
+            result = source(idx)
+        else:
+            result = source((idx, ))
+        return result
+
     def __iter__(self):
         """
         Create a generator on the images, returned as dictionaries.
@@ -205,8 +236,8 @@ class ImageSet:
         return self.table.nrows
 
     def _add_image(self, name, img_time, data, ret_reduced=True):
+        img_id = self.table.nrows
         row = self.table.row
-        img_id = row.nrow
         row['name'] = name
         row['time'] = img_time
         row['pixels'] = data
@@ -216,7 +247,11 @@ class ImageSet:
             self.fileh.root.images.pcapixels.append(reduced)
             if ret_reduced:
                 data = reduced[0]
-        self._times = None  # invalidate times cache
+        #update or invalidate times cache
+        if self._times is not None and img_time > self._times[-1]:
+            self._times.append(img_time)
+        else:
+            self._times = None
         return self._img_dict(name, img_time, data, img_id)
 
     def _add_from_file(self, imgfile, name_parser, ret_reduced=True):
@@ -318,7 +353,8 @@ class ImageSet:
             sample = self.table.cols.pixels[:]
         else:
             index = random.sample(xrange(self.table.nrows), sample_size)
-            sample = np.empty((sample_size, self.img_size), dtype=PIXEL_TYPE)
+            imgdim = np.prod(self.img_shape)
+            sample = np.empty((sample_size, imgdim), dtype=PIXEL_TYPE)
             for i, img in enumerate(self.table.itersequence(index)):
                 sample[i] = img['pixels']
         return sample
@@ -349,6 +385,11 @@ class ImageSet:
         #FIXME: choose an algo
         self.pca = PCA(n_components=n_components).fit(sample)
         ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
+
+        if 'pcamodel' in self.fileh.root.images:
+            self.fileh.root.images.pcamodel.remove()
+            self.fileh.root.images.pcapixels.remove()
+
         fn = filenode.new_node(self.fileh, where='/images', name='pcamodel')
         pickle.dump(self.pca, fn, pickle.HIGHEST_PROTOCOL)
         fn.close()
@@ -360,7 +401,9 @@ class ImageSet:
                                               shape=(0, self.img_size),
                                               atom=tables.FloatAtom())
         chunk_size = sample_size
-        nb_chunks = nb_images / chunk_size
+        nb_chunks = nb_images // chunk_size
+        if nb_images % chunk_size:
+            nb_chunks += 1
         for c in range(nb_chunks):
             s = c * chunk_size
             e = min(nb_images, s + chunk_size)
@@ -375,6 +418,8 @@ class ImageSet:
         ----------
         pca_pixels : array
         """
+        if self.pca is None:
+            return pca_pixels
         pixels_out = self.pca.inverse_transform(pca_pixels)
         return pixels_out.clip(0, 1, pixels_out)
 
@@ -400,7 +445,7 @@ class ImageSet:
         target = start - interval
         mintarget = target - interval
         if self._times is None:
-            self._times = self.table.cols.time[:]
+            self._times = list(self.table.cols.time[:])
             self._times.sort()
 
         idx = bisect.bisect_left(self._times, target)
@@ -504,10 +549,10 @@ class DataSet:
     def _nodify(self, fuzzy_node):
         "Retrieve a set of examples by name, if `fuzzy_node` is not a node."
         if not hasattr(fuzzy_node, '_v_attrs'):
-            set_ = self.fileh.get_node(self.fileh.root.examples, fuzzy_node)
+            ex_set = self.fileh.get_node(self.fileh.root.examples, fuzzy_node)
         else:
-            set_ = fuzzy_node
-        return set_
+            ex_set = fuzzy_node
+        return ex_set
 
     def init_set(self, name, hist_len=3, interval=600, future_time=1800,
                  intervals=None, reduced=None, nb_ex=None):
@@ -557,21 +602,32 @@ class DataSet:
         ex_group = self.fileh.root.examples
         if name in ex_group:
             self.fileh.remove_node(ex_group, name, recursive=True)
-        set_group = self.fileh.create_group(ex_group, name)
-        set_group._v_attrs.intervals = intervals
-        set_group._v_attrs.reduced = reduced
+        ex_set = self.fileh.create_group(ex_group, name)
+        ex_set._v_attrs.intervals = intervals
+        ex_set._v_attrs.reduced = reduced
+        self._create_set_arrays(ex_set, 'img_refs', 'input', 'output', nb_ex)
+        return ex_set
 
-        imgdim = self.imgset.img_size if reduced else np.prod(self.img_shape)
+    def _create_set_arrays(self, ex_set, refs_name, in_name, out_name, nb_ex):
+        fh = self.fileh
+        hist_len = len(ex_set._v_attrs.intervals)
+        if ex_set._v_attrs.reduced:
+            imgdim = self.imgset.img_size
+        else:
+            imgdim = np.prod(self.img_shape)
         nb_feat = (imgdim+1) * hist_len
         pixel_atom = tables.Atom.from_sctype(PIXEL_TYPE)
-        self.fileh.create_earray(set_group, 'img_refs', atom=tables.IntAtom(),
-                                 shape=(0, hist_len+1), expectedrows=nb_ex)
-        self.fileh.create_earray(set_group, 'input', atom=pixel_atom,
-                                 shape=(0, nb_feat), expectedrows=nb_ex)
-        self.fileh.create_earray(set_group, 'output', atom=pixel_atom,
-                                 shape=(0, imgdim), expectedrows=nb_ex)
+
+        if refs_name is not None:
+            fh.create_earray(ex_set, refs_name, atom=tables.IntAtom(),
+                             shape=(0, hist_len+1), expectedrows=nb_ex)
+        if in_name is not None:
+            fh.create_earray(ex_set, in_name, atom=pixel_atom,
+                             shape=(0, nb_feat), expectedrows=nb_ex)
+        if out_name is not None:
+            fh.create_earray(ex_set, out_name, atom=pixel_atom,
+                             shape=(0, imgdim), expectedrows=nb_ex)
         self.fileh.flush()
-        return set_group
 
     def make_set(self, name, hist_len=3, interval=600, future_time=1800,
                  intervals=None, reduced=None):
@@ -679,14 +735,14 @@ class DataSet:
         images.reverse()
         return images
 
-    def make_input(self, set_, fuzzy_img, target_time=None):
+    def make_input(self, ex_set, fuzzy_img, target_time=None):
         """
         Try to construct the input of an example such that `img` is the last
         image.
 
         Parameters
         ----------
-        set_ : pytables node or str
+        ex_set : pytables node or str
             A set of examples such as returned by `init_set`, or the name of
             such a set
         img : dict or int
@@ -700,13 +756,13 @@ class DataSet:
         array : the feature vector
         """
         img = self._dictify(fuzzy_img)
-        if img is None:
+        if img is None:  # FIXME Move to get_image
             raise ValueError("Image with time=%d does not exist" % fuzzy_img)
-        set_ = self._nodify(set_)
-        intervals = set_._v_attrs.intervals[:-1]
-        reduced = set_._v_attrs.reduced
+        ex_set = self._nodify(ex_set)
+        intervals = ex_set._v_attrs.intervals[:-1]
+        reduced = ex_set._v_attrs.reduced
         if target_time is None:
-            target_time = set_._v_attrs.intervals[-1]
+            target_time = ex_set._v_attrs.intervals[-1]
         images = self._find_sequence(img, intervals, reduced)
         if len(images) == len(intervals) + 1:
             prediction_time = target_time + images[-1]['time']
@@ -729,7 +785,7 @@ class DataSet:
             ex_data[j-hist_len] = target_time - img['time']
         return ex_data
 
-    def add_image(self, set_, imgfile):
+    def add_image(self, ex_set, imgfile):
         """
         Add an image to the underlying ImageSet, and creates a new example
         using this image as expected prediction of the example.
@@ -741,42 +797,72 @@ class DataSet:
         imgfile : str
             Filename of the image to add
         """
-        if not hasattr(set_, '_v_attrs'):
-            set_ = self.fileh.get_node(self.fileh.root.examples, set_)
-        intervals = set_._v_attrs.intervals
-        reduced = set_._v_attrs.reduced
+        if not hasattr(ex_set, '_v_attrs'):
+            ex_set = self.fileh.get_node(self.fileh.root.examples, ex_set)
+        intervals = ex_set._v_attrs.intervals
+        reduced = ex_set._v_attrs.reduced
         img = self.imgset.add_from_file(imgfile, ret_reduced=reduced)
-        print(img)
         example = self._find_example(img, intervals, reduced)
         if example is not None:
             ids = [img['id'] for img in example[0]]
             ids.append(example[1]['id'])
-            set_.img_refs.append([ids])
+            ex_set.img_refs.append([ids])
             input_row = self._get_input_data(example[0], example[1]['time'])
-            set_.input.append((input_row, ))
-            set_.output.append((example[1]['data'], ))
-            set_.img_refs.flush()
-            set_.input.flush()
-            set_.output.flush()
+            ex_set.input.append((input_row, ))
+            ex_set.output.append((example[1]['data'], ))
+            ex_set.img_refs.flush()
+            ex_set.input.flush()
+            ex_set.output.flush()
         return img
 
-    def input_img(self, set_, i, j):
+    def reduce_dim(self):
+        """
+        Perform dimensionality reduction on the underlying ImageSet, and
+        re-compute the input and output arrays of all the sets of examples.
+        Note that re-computing the reduction after some images were added may
+        INCREASE the dimensionality (but would improve the sampling)
+        """
+        self.imgset.reduce_dim()
+        for ex_set in self.fileh.root.examples:
+            self._recompute_set(ex_set, True)
+
+    def _recompute_set(self, ex_set, reduced):
+        """
+        Re-create the input and output arrays of `ex_set`.
+        """
+        nb_ex = ex_set.img_refs._v_expectedrows
+        oldinput = ex_set.input
+        hist_len = len(ex_set._v_attrs.intervals)
+        ex_set._v_attrs.reduced = reduced
+        self._create_set_arrays(ex_set, None, 'newinput', 'newoutput', nb_ex)
+        for refs_row in ex_set.img_refs:
+            pixels_row = self.imgset.get_pixels_at(refs_row)
+            newfeatures = pixels_row[:-1].flatten()
+            oldfeatures = oldinput[ex_set.img_refs.nrow, -hist_len:]
+            ex_set.newinput.append([np.hstack([newfeatures, oldfeatures])])
+            ex_set.newoutput.append([pixels_row[-1]])
+        ex_set.input.remove()
+        ex_set.output.remove()
+        ex_set.newinput.rename('input')
+        ex_set.newoutput.rename('output')
+
+    def input_img(self, ex_set, i, j):
         """
         Return the pixels the `j`th image from example `i` in the input data,
         with its original shape (directly displayable by matplotlib)
         """
-        set_ = self._nodify(set_)
-        imgdim = set_.output.shape[1]
+        ex_set = self._nodify(ex_set)
+        imgdim = ex_set.output.shape[1]
         img = self.input_data[i, j*imgdim:(j+1)*imgdim]
         return img.reshape(self.img_shape)
 
-    def output_img(self, set_, i):
+    def output_img(self, ex_set, i):
         """
         Return the pixels the `i`th output image,
         with its original shape (directly displayable by matplotlib)
         """
-        set_ = self._nodify(set_)
-        img = set_.output[i]
+        ex_set = self._nodify(ex_set)
+        img = ex_set.output[i]
         return img.reshape(self.img_shape)
 
     def split(self, train=.7, valid=.15, shuffle=False):

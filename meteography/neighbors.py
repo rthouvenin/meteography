@@ -9,7 +9,7 @@ from sklearn.neighbors import NearestNeighbors as SKNN
 
 
 class NearestNeighbors:
-    BATCH_SIZE = 10 * 1024 * 1024
+    BATCH_SIZE = 20 * 1024 * 1024
 
     def __init__(self):
         self.sknn = SKNN(1, algorithm='brute')

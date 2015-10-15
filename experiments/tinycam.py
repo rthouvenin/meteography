@@ -24,8 +24,11 @@ logging.getLogger().setLevel(logging.ERROR)
 
 datapath = os.path.join('..', 'data', 'webcams', 'tinycam')
 
-imageset = ImageSet.make(datapath, greyscale=True)
-dataset = DataSet.make(imageset, interval=1800)
+imageset = ImageSet.create('/home/romain/tmp/temp.h5', (80, 117, 3))
+imageset.add_images(datapath)
+dataset = DataSet.create(imageset.fileh, imageset)
+dataset.make_set('tinycam', interval=1800)
+imageset.close()
 insize = dataset.input_data.shape[1]
 outsize = dataset.output_data.shape[1]
 mlp = Perceptron(insize, outsize)

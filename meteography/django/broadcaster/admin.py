@@ -1,12 +1,8 @@
-import os.path
-
 from django.contrib import admin
 
 from meteography.django.broadcaster.models import Prediction
 from meteography.django.broadcaster.models import Webcam
-from meteography.django.broadcaster.settings import WEBCAM_DIR, WEBCAM_SIZE
-
-from meteography.dataset import ImageSet, DataSet
+from meteography.django.broadcaster.storage import WebcamStorage
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -29,12 +25,9 @@ class WebcamAdmin(admin.ModelAdmin):
     list_display = ('name', )
 
     def save_model(self, request, webcam, form, change):
-        hdf5_path = os.path.join(WEBCAM_DIR, webcam.webcam_id + '.h5')
-        img_shape = WEBCAM_SIZE[1], WEBCAM_SIZE[0], 3
-        imageset = ImageSet.create(hdf5_path, img_shape)
-        dataset = DataSet.create(imageset.fileh, imageset)
-        dataset.close()
-        os.makedirs(os.path.join(WEBCAM_DIR, webcam.webcam_id, 'pics'))
+        """Init webcam storage before saving the model"""
+        webcam_fs = WebcamStorage()
+        webcam_fs.add_webcam(webcam.webcam_id)
         webcam.save()
 
 

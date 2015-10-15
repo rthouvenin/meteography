@@ -534,6 +534,10 @@ class DataSet:
             fp = thefile
         return cls(fp, imageset)
 
+    def close(self):
+        self.imgset.close()
+        return self.fileh.close()
+
     def _dictify(self, fuzzy_img):
         """
         Convert fussy_img to dictionary representation.

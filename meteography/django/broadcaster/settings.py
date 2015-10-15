@@ -3,5 +3,5 @@ import os.path
 
 from django.conf import settings
 
-PREDICTIONS_DIR = getattr(settings, PREDICTIONS_DIR, 
-                          os.path.join(settings.BASE_DIR, 'temp', 'predict'))
+WEBCAM_DIR = getattr(settings, 'WEBCAM_DIR',
+                     os.path.join(settings.MEDIA_ROOT, 'webcams'))

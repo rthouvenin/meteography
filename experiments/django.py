@@ -10,7 +10,7 @@ url_pattern = 'http://localhost:8000/webcams/%s/pictures/%s'
 webcam = 'sfo'
 
 with open(filepath) as f:
-    filename = os.path.basename(filepath)
+    filename, ext = os.path.splitext(os.path.basename(filepath))
     url = url_pattern % (webcam, filename)
     resp = requests.put(url, data=f.read())
     print("%s: %d [%s]" % (filename, resp.status_code, resp.reason))

@@ -1,3 +1,4 @@
+import io
 import os.path
 
 from django.core.files.storage import FileSystemStorage
@@ -7,8 +8,10 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
+from PIL import Image
+
 from meteography.django.broadcaster.models import Webcam
-from meteography.django.broadcaster.settings import WEBCAM_DIR
+from meteography.django.broadcaster.settings import WEBCAM_DIR, WEBCAM_SIZE
 
 webcam_fs = FileSystemStorage(location=WEBCAM_DIR)
 
@@ -30,15 +33,23 @@ def webcam(request, webcam_id):
 
 @csrf_exempt
 @require_http_methods(['PUT'])
-def picture(request, webcam_id, timestamp, ext):
+def picture(request, webcam_id, timestamp):
     # check the webcam exists, return 404 if not
     try:
         Webcam.objects.get(webcam_id=webcam_id)
     except Webcam.DoesNotExist:
         return HttpResponseNotFound("The webcam does not exist")
 
-    # store the request content in a file and return 204 (No Content)
-    filename = '%s.%s' % (timestamp, ext)
+    # read and resize the image
+    img_bytes = io.BytesIO(request.read())
+    img = Image.open(img_bytes)
+    if img.size != WEBCAM_SIZE:
+        img = img.resize(WEBCAM_SIZE)
+
+    # store the the image and return 204 (No Content)
+    filename = '%s.jpg' % timestamp
     filepath = os.path.join(webcam_id, 'pics', filename)
-    webcam_fs.save(filepath, request)
+    with webcam_fs.open(filepath, mode='wb') as fp:
+        img.save(fp)
+
     return HttpResponse(status=204)

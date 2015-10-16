@@ -6,10 +6,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from meteography.django.broadcaster.models import Webcam
-from meteography.django.broadcaster.storage import WebcamStorage
-
-webcam_fs = WebcamStorage()
+from meteography.django.broadcaster.models import Webcam, Picture
 
 
 def index(request):
@@ -23,20 +20,17 @@ def index(request):
     return render(request, 'meteographer/index.html', context)
 
 
-def webcam(request, webcam_id):
-    pass
-
-
 @csrf_exempt
 @require_http_methods(['PUT'])
 def picture(request, webcam_id, timestamp):
     # check the webcam exists, return 404 if not
     try:
-        Webcam.objects.get(webcam_id=webcam_id)
+        webcam = Webcam.objects.get(webcam_id=webcam_id)
     except Webcam.DoesNotExist:
-        return HttpResponseNotFound("The webcam does not exist")
+        return HttpResponseNotFound("The webcam %s does not exist" % webcam_id)
 
+    # Save the new picture
     img_bytes = io.BytesIO(request.read())
-    webcam_fs.add_picture(webcam_id, timestamp, img_bytes)
-
+    pic = Picture(webcam, timestamp, img_bytes)
+    pic.save()
     return HttpResponse(status=204)

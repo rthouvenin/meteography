@@ -5,14 +5,13 @@ from django.core.files.storage import FileSystemStorage
 from PIL import Image
 
 from meteography.dataset import ImageSet, DataSet
-from meteography.django.broadcaster.settings import WEBCAM_DIR, WEBCAM_SIZE
+from meteography.django.broadcaster import settings
 
 
 class WebcamStorage:
     PICTURE_DIR = 'pics'
-    SET_NAME = 'online'
 
-    def __init__(self, location=WEBCAM_DIR):
+    def __init__(self, location=settings.WEBCAM_DIR):
         self.fs = FileSystemStorage(location)
 
     def dataset_path(self, webcam_id):
@@ -45,8 +44,8 @@ class WebcamStorage:
         """
         # read and resize the image
         img = Image.open(fp)
-        if img.size != WEBCAM_SIZE:
-            img = img.resize(WEBCAM_SIZE)
+        if img.size != settings.WEBCAM_SIZE:
+            img = img.resize(settings.WEBCAM_SIZE)
 
         # store the image in file
         filepath = self.picture_path(webcam_id, timestamp)
@@ -57,16 +56,17 @@ class WebcamStorage:
         hdf5_path = self.fs.path(self.dataset_path(webcam_id))
         with DataSet.open(hdf5_path) as dataset:
             # FIXME give directly PIL reference
-            dataset.add_image(self.SET_NAME, self.fs.path(filepath))
+            dataset.add_image(settings.SET_NAME, self.fs.path(filepath))
 
     def add_webcam(self, webcam_id):
         """
         Create the required files and directories for a new webcam
         """
         hdf5_path = self.fs.path(self.dataset_path(webcam_id))
-        img_shape = WEBCAM_SIZE[1], WEBCAM_SIZE[0], 3
+        w, h = settings.WEBCAM_SIZE
+        img_shape = h, w, 3
         with ImageSet.create(hdf5_path, img_shape) as imageset:
             with DataSet.create(imageset) as dataset:
-                dataset.make_set(self.SET_NAME)  # FIXME Configurabilize
+                dataset.make_set(settings.SET_NAME)  # FIXME Configurabilize
         pics_path = self.fs.path(self.picture_path(webcam_id))
         os.makedirs(pics_path)

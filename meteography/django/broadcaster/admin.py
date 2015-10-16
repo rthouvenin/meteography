@@ -2,7 +2,6 @@ from django.contrib import admin
 
 from meteography.django.broadcaster.models import Prediction
 from meteography.django.broadcaster.models import Webcam
-from meteography.django.broadcaster.storage import WebcamStorage
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -32,9 +31,9 @@ class WebcamAdmin(admin.ModelAdmin):
             return ()
 
     def save_model(self, request, webcam, form, change):
-        """Init webcam storage before saving the model"""
-        webcam_fs = WebcamStorage()
-        webcam_fs.add_webcam(webcam.webcam_id)
+        """Init webcam storage before saving the model, in case of create"""
+        if not change:
+            webcam.store()
         webcam.save()
 
 

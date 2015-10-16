@@ -158,6 +158,13 @@ class ImageSet:
     def close(self):
         return self.fileh.close()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
     def _img_dict(self, name, time, data, img_id):
         return {
             'name': name,
@@ -488,24 +495,28 @@ class DataSet:
         self.is_split = False
 
     @classmethod
-    def create(cls, thefile, imgset):
+    def create(cls, imgset, thefile=None):
         """
         Create in `thefile` a pytables node 'examples' to be used for datasets.
         Create a DataSet backed by this file and with `imgset` as image source.
 
         Parameters
         ----------
-        thefile : str or pytables file descriptor
+        imgset : ImageSet
+            The image source to be used to construct learning examples
+        thefile : str or pytables file descriptor or None
             The name of the file to create, or a file descriptor already
             opened. If the name of an existing file is given, it will be
             overwritten.
-        imgset : ImageSet
-            The image source to be used to construct learning examples
+            If None, the same file as the ImageSet's one will be used
         """
-        if not hasattr(thefile, 'create_table'):
+        if thefile is None:
+            fp = imgset.fileh
+        elif not hasattr(thefile, 'create_table'):
             fp = tables.open_file(thefile, mode='w')
         else:
             fp = thefile
+
         try:
             fp.create_group('/', 'examples')
         except Exception as e:
@@ -516,19 +527,25 @@ class DataSet:
         return cls(fp, imgset)
 
     @classmethod
-    def open(cls, thefile, imageset):
+    def open(cls, imageset, thefile=None):
         """
         Instantiate a DataSet backed by `thefile` and imageset.
 
         Parameters
         ----------
-        thefile : str or pytables file descriptor
+        imageset : ImageSet or file argument
+            The image source to be used to construct learning examples, or a
+            file that contains an ImageSet
+        thefile : str or pytables file descriptor or None
             The name of the file to open, or a pytables file descriptor already
-            opened.
-        imgset : ImageSet
-            The image source to be used to construct learning examples
+            opened. If None, the one of the ImageSet will be used.
         """
-        if not hasattr(thefile, 'create_table'):
+        if not hasattr(imageset, 'find_closest'):
+            imageset = ImageSet.open(imageset)
+
+        if thefile is None:
+            fp = imageset.fileh
+        elif not hasattr(thefile, 'create_table'):
             fp = tables.open_file(thefile, mode='a')
         else:
             fp = thefile
@@ -537,6 +554,13 @@ class DataSet:
     def close(self):
         self.imgset.close()
         return self.fileh.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
     def _dictify(self, fuzzy_img):
         """

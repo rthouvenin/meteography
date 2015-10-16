@@ -182,13 +182,13 @@ class TestImageSet:
 
 @pytest.fixture
 def dataset(bigimageset):
-    dataset = DataSet.create(bigimageset.fileh, bigimageset)
+    dataset = DataSet.create(bigimageset)
     dataset.make_set('test', 5, 60, 120)
     return dataset
 
 @pytest.fixture
 def emptydataset(emptyimageset):
-    dataset = DataSet.create(emptyimageset.fileh, emptyimageset)
+    dataset = DataSet.create(emptyimageset)
     return dataset
 
 

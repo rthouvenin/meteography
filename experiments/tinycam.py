@@ -26,7 +26,7 @@ datapath = os.path.join('..', 'data', 'webcams', 'tinycam')
 
 imageset = ImageSet.create('/home/romain/tmp/temp.h5', (80, 117, 3))
 imageset.add_images(datapath)
-dataset = DataSet.create(imageset.fileh, imageset)
+dataset = DataSet.create(imageset)
 dataset.make_set('tinycam', interval=1800)
 imageset.close()
 insize = dataset.input_data.shape[1]

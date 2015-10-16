@@ -23,6 +23,13 @@ class ReadOnlyAdmin(admin.ModelAdmin):
 @admin.register(Webcam)
 class WebcamAdmin(admin.ModelAdmin):
     list_display = ('name', )
+    fields = ('webcam_id', 'name')
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None:
+            return ('webcam_id', )
+        else:
+            return ()
 
     def save_model(self, request, webcam, form, change):
         """Init webcam storage before saving the model"""

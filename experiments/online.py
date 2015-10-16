@@ -26,7 +26,7 @@ filenames = os.listdir(args.datapath)
 filenames.sort()
 
 imageset = ImageSet.create(args.hdf5path, (80, 117, 3))
-dataset = DataSet.create(imageset.fileh, imageset)
+dataset = DataSet.create(imageset)
 onlineset = dataset.make_set('online')
 neighbors = NearestNeighbors()
 neighbors.fit(onlineset.input, onlineset.output)

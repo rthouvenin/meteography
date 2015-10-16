@@ -657,6 +657,9 @@ class DataSet:
                              shape=(0, imgdim), expectedrows=nb_ex)
         self.fileh.flush()
 
+    def get_set(self, name):
+        return self._nodify(name)
+
     def make_set(self, name, hist_len=3, interval=600, future_time=1800,
                  intervals=None, reduced=None):
         """

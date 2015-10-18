@@ -243,6 +243,7 @@ class ImageSet:
         return self.table.nrows
 
     def _add_image(self, name, img_time, data, ret_reduced=True):
+        # FIXME check it does not exist
         img_id = self.table.nrows
         row = self.table.row
         row['name'] = name
@@ -816,7 +817,7 @@ class DataSet:
             ex_data[j-hist_len] = target_time - img['time']
         return ex_data
 
-    def add_image(self, imgfile, ex_set):
+    def add_image(self, imgfile, ex_set=None):
         """
         Add an image to the underlying ImageSet, and creates a new example
         using this image as expected prediction of the example.
@@ -828,24 +829,29 @@ class DataSet:
         setname : str
             Name of the dataset where the example should be added
         """
-        if not hasattr(ex_set, '_v_attrs'):
-            ex_set = self.fileh.get_node(self.fileh.root.examples, ex_set)
-            
-        intervals = ex_set._v_attrs.intervals
-        reduced = ex_set._v_attrs.reduced
-        img = self.imgset.add_from_file(imgfile, ret_reduced=reduced)
-        example = self._find_example(img, intervals, reduced)
+        if ex_set is not None:
+            ex_sets = [self._nodify(ex_set)]
+        else:
+            ex_sets = iter(self.fileh.root.examples)
 
-        if example is not None:
-            ids = [im['id'] for im in example[0]]
-            ids.append(example[1]['id'])
-            ex_set.img_refs.append([ids])
-            input_row = self._get_input_data(example[0], example[1]['time'])
-            ex_set.input.append((input_row, ))
-            ex_set.output.append((example[1]['data'], ))
-            ex_set.img_refs.flush()
-            ex_set.input.flush()
-            ex_set.output.flush()
+        for ex_set in ex_sets:
+            # FIXME the image should be added once
+            intervals = ex_set._v_attrs.intervals
+            reduced = ex_set._v_attrs.reduced
+            img = self.imgset.add_from_file(imgfile, ret_reduced=reduced)
+            example = self._find_example(img, intervals, reduced)
+
+            if example is not None:
+                imgs_in, img_out = example
+                ids = [im['id'] for im in imgs_in]
+                ids.append(img_out['id'])
+                ex_set.img_refs.append([ids])
+                input_row = self._get_input_data(imgs_in, img_out['time'])
+                ex_set.input.append([input_row])
+                ex_set.output.append([img_out['data']])
+                ex_set.img_refs.flush()
+                ex_set.input.flush()
+                ex_set.output.flush()
         return img
 
     def reduce_dim(self):

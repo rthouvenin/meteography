@@ -10,7 +10,7 @@ import requests
 parser = argparse.ArgumentParser()
 parser.add_argument('webcam')
 parser.add_argument('--count', type=int)
-parser.add_argument('--from_index', type=int)
+parser.add_argument('--from-index', type=int)
 args = parser.parse_args()
 
 

@@ -1,7 +1,7 @@
 from django.contrib import admin
 
-from meteography.django.broadcaster.models import Prediction
-from meteography.django.broadcaster.models import Webcam
+from meteography.django.broadcaster.models import (
+    Webcam, PredictionParams, Prediction)
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -35,6 +35,19 @@ class WebcamAdmin(admin.ModelAdmin):
         if not change:
             webcam.store()
         webcam.save()
+
+
+@admin.register(PredictionParams)
+class PredictionParamsAdmin(admin.ModelAdmin):
+    list_display = ('webcam', 'name', 'intervals')
+    list_display_links = ('name', )
+    fields = ('webcam', 'name', 'intervals')
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None:
+            return ('webcam', 'name')
+        else:
+            return ()
 
 
 @admin.register(Prediction)

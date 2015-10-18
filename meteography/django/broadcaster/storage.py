@@ -56,7 +56,7 @@ class WebcamStorage:
         hdf5_path = self.fs.path(self.dataset_path(webcam_id))
         with DataSet.open(hdf5_path) as dataset:
             # FIXME give directly PIL reference
-            dataset.add_image(settings.SET_NAME, self.fs.path(filepath))
+            dataset.add_image(self.fs.path(filepath), settings.SET_NAME)
 
     def add_webcam(self, webcam_id):
         """

@@ -242,7 +242,7 @@ class TestDataSet:
         """Adding an image to an empty dataset should add an image but cannot
         create an example"""
         testset = emptydataset.init_set('test', intervals=[6, 6, 6])
-        emptydataset.add_image('test', imgfile)
+        emptydataset.add_image(imgfile, 'test')
         assert(len(emptydataset.imgset) == 1)
         assert(len(testset.input) == 0)
         assert(len(testset.output) == 0)
@@ -251,7 +251,7 @@ class TestDataSet:
         "Adding an image to a compatible dataset should create a new example"
         prev_length = len(dataset.imgset)
         prev_nb_ex = len(dataset.input_data)
-        dataset.add_image('test', imgfile)
+        dataset.add_image(imgfile, 'test')
         assert(len(dataset.imgset) == prev_length + 1)
         assert(len(dataset.input_data) == prev_nb_ex + 1)
         assert(len(dataset.output_data) == prev_nb_ex + 1)
@@ -262,7 +262,7 @@ class TestDataSet:
         prev_length = len(dataset.imgset)
         prev_nb_ex = len(dataset.input_data)
         dataset.imgset.reduce_dim()
-        dataset.add_image('test', imgfile)
+        dataset.add_image(imgfile, 'test')
         assert(len(dataset.imgset) == prev_length + 1)
         assert(len(dataset.input_data) == prev_nb_ex + 1)
         assert(len(dataset.output_data) == prev_nb_ex + 1)

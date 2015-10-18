@@ -40,7 +40,7 @@ expects = [None] * len(onlineset._v_attrs.intervals)
 e = 0
 for filename in filenames:
     filepath = os.path.join(args.datapath, filename)
-    img = dataset.add_image(onlineset, filepath)
+    img = dataset.add_image(filepath, onlineset)
     expected = expects[e]
     expects[e] = imageset.recover_images([img['data']])[0]
     e = (e + 1) % len(expects)

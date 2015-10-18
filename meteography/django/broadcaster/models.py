@@ -51,6 +51,5 @@ class PredictionParams(models.Model):
 
 
 class Prediction(models.Model):
-    webcam = models.ForeignKey(Webcam)
-    comp_date = models.DateTimeField('computation date')
-    target = models.DurationField()
+    params = models.ForeignKey(PredictionParams)
+    timestamp = models.DateTimeField('computation date')

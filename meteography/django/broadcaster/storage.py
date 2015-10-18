@@ -96,7 +96,8 @@ class WebcamStorage:
         """
         cam_id = params.webcam.webcam_id
         pred_path = self.prediction_path(cam_id, params.name)
-        os.makedirs(pred_path)
+        if not os.path.exists(pred_path):
+            os.makedirs(pred_path)
 
         with self.get_dataset(cam_id) as dataset:
             dataset.init_set(params.name, intervals=params.intervals)

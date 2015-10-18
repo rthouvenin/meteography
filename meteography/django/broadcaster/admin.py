@@ -52,4 +52,6 @@ class PredictionParamsAdmin(admin.ModelAdmin):
 
 @admin.register(Prediction)
 class PredictionAdmin(ReadOnlyAdmin):
+    list_display = ('params', 'comp_date', 'path')
+    list_display_links = ('comp_date', )
     pass

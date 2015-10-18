@@ -1,3 +1,5 @@
+import matplotlib.pylab as plt
+
 from django.db import models
 
 from meteography.django.broadcaster.storage import webcam_fs
@@ -40,16 +42,22 @@ class PredictionParams(models.Model):
         # converts csv string into list of ints, and back into string
         if len(self.intervals):
             self.intervals = map(int, self.intervals.split(','))
+        # FIXME saving without changing should not erase data...
         webcam_fs.add_examples_set(self)
         self.intervals = ','.join(map(str, self.intervals))
 
         super(PredictionParams, self).save(*args, **kwargs)
 
     def __unicode__(self):
-        return '%s, %s: [%s]' % (
+        return '%s.%s: [%s]' % (
             self.webcam.webcam_id, self.name, str(self.intervals))
 
 
 class Prediction(models.Model):
     params = models.ForeignKey(PredictionParams)
-    timestamp = models.DateTimeField('computation date')
+    comp_date = models.DateTimeField('computation date')
+    path = models.CharField(max_length=100)
+
+    def save(self, *args, **kwargs):
+        plt.imsave(self.path, self.sci_bytes)
+        super(Prediction, self).save(*args, **kwargs)

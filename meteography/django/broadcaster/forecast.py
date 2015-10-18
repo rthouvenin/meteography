@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 
-import matplotlib.pylab as plt
+from datetime import datetime
+
+from django.utils.timezone import utc
 
 from meteography.neighbors import NearestNeighbors
+from meteography.django.broadcaster.models import Prediction
 from meteography.django.broadcaster.storage import webcam_fs
 
 
 def make_prediction(webcam, params, timestamp):
     cam_id = webcam.webcam_id
+    result = None
     with webcam_fs.get_dataset(cam_id) as dataset:
         onlineset = dataset.get_set(params.name)
         new_input = dataset.make_input(onlineset, int(timestamp))
@@ -17,4 +21,8 @@ def make_prediction(webcam, params, timestamp):
             output = neighbors.predict(new_input).reshape(dataset.img_shape)
             # FIXME reference existing image (data and file)
             imgpath = webcam_fs.prediction_path(cam_id, params.name, timestamp)
-            plt.imsave(imgpath, output)
+            result = Prediction(params=params)
+            result.comp_date = datetime.fromtimestamp(float(timestamp), utc)
+            result.sci_bytes = output
+            result.path = imgpath
+    return result

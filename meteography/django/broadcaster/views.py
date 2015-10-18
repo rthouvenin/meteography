@@ -35,9 +35,11 @@ def picture(request, webcam_id, timestamp):
     pic = Picture(webcam, timestamp, img_bytes)
     pic.save()
 
-    # Make a new prediction and save it
+    # Make a new prediction and save it for each set of prediction params
     params_list = webcam.predictionparams_set.all()
     for params in params_list:
-        forecast.make_prediction(webcam, params, timestamp)
+        prediction = forecast.make_prediction(webcam, params, timestamp)
+        if prediction:
+            prediction.save()
 
     return HttpResponse(status=204)

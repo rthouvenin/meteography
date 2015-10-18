@@ -34,13 +34,14 @@ class WebcamStorage:
         """
         return self._image_path(webcam_id, self.PICTURE_DIR, timestamp)
 
-    def prediction_path(self, webcam_id, timestamp=None):
+    def prediction_path(self, webcam_id, params_name, timestamp=None):
         """
-        Return the path of a prediction image for the given webcam
-        and made at given `timestamp`.
+        Return the path of a prediction image for the given webcam, the
+        prediction parameters named `params_name` and made at `timestamp`.
         If `timestamp` is None, return the path of the directory.
         """
-        return self._image_path(webcam_id, self.PREDICTION_DIR, timestamp)
+        img_dir = os.path.join(self.PREDICTION_DIR, params_name)
+        return self._image_path(webcam_id, img_dir, timestamp)
 
     def add_webcam(self, webcam_id):
         """
@@ -53,11 +54,9 @@ class WebcamStorage:
         with ImageSet.create(hdf5_path, img_shape) as imageset:
             DataSet.create(imageset).close()
 
-        # create directories for pictures and predictions
+        # create directories for pictures
         pics_path = self.picture_path(webcam_id)
         os.makedirs(pics_path)
-        pred_path = self.prediction_path(webcam_id)
-        os.makedirs(pred_path)
 
     def get_dataset(self, webcam_id):
         hdf5_path = self.dataset_path(webcam_id)
@@ -91,8 +90,15 @@ class WebcamStorage:
             # FIXME give directly PIL reference
             dataset.add_image(self.fs.path(filepath))
 
-    def add_example_set(self, params):
-        with self.get_dataset(params.webcam.webcam_id) as dataset:
+    def add_examples_set(self, params):
+        """
+        Create the directories and pytables group for a set of examples
+        """
+        cam_id = params.webcam.webcam_id
+        pred_path = self.prediction_path(cam_id, params.name)
+        os.makedirs(pred_path)
+
+        with self.get_dataset(cam_id) as dataset:
             dataset.init_set(params.name, intervals=params.intervals)
 
 # Default storage instance

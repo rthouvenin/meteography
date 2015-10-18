@@ -31,13 +31,16 @@ class PredictionParams(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Create an an examples set in the dataset of the cam before saving in DB
-        N.B.: This will erase any example set with the same name!
+        Create an set of examples in the dataset of the cam before saving in DB
+
+        Note:
+        -----
+        This will erase any set with the same name!
         """
         # converts csv string into list of ints, and back into string
         if len(self.intervals):
             self.intervals = map(int, self.intervals.split(','))
-        webcam_fs.add_example_set(self)
+        webcam_fs.add_examples_set(self)
         self.intervals = ','.join(map(str, self.intervals))
 
         super(PredictionParams, self).save(*args, **kwargs)

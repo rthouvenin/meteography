@@ -4,7 +4,6 @@
 
 .camlist li {
   padding: 10px;
-  height: 80px;
 }
 .camlist li:nth-child(odd) {
   background-color: paleturquoise;

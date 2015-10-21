@@ -8,6 +8,7 @@ from meteography.dataset import ImageSet, DataSet
 from meteography.django.broadcaster import settings
 
 
+# FIXME turn into actual storage
 class WebcamStorage:
     PICTURE_DIR = 'pics'
     PREDICTION_DIR = 'predictions'
@@ -24,7 +25,8 @@ class WebcamStorage:
         else:
             basename = '%s.jpg' % str(timestamp)
             rel_path = os.path.join(webcam_id, img_dir, basename)
-        return self.fs.path(rel_path)
+        #return self.fs.path(rel_path)
+        return rel_path
 
     def picture_path(self, webcam_id, timestamp=None):
         """
@@ -55,7 +57,7 @@ class WebcamStorage:
             DataSet.create(imageset).close()
 
         # create directories for pictures
-        pics_path = self.picture_path(webcam_id)
+        pics_path = self.fs.path(self.picture_path(webcam_id))
         os.makedirs(pics_path)
 
     def get_dataset(self, webcam_id):
@@ -95,7 +97,7 @@ class WebcamStorage:
         Create the directories and pytables group for a set of examples
         """
         cam_id = params.webcam.webcam_id
-        pred_path = self.prediction_path(cam_id, params.name)
+        pred_path = self.fs.path(self.prediction_path(cam_id, params.name))
         if not os.path.exists(pred_path):
             os.makedirs(pred_path)
 
@@ -103,4 +105,4 @@ class WebcamStorage:
             dataset.init_set(params.name, intervals=params.intervals)
 
 # Default storage instance
-webcam_fs = WebcamStorage(settings.WEBCAM_DIR)
+webcam_fs = WebcamStorage(settings.WEBCAM_ROOT)

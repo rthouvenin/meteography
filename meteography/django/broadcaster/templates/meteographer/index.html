@@ -4,7 +4,7 @@
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
   <title>Meteography</title>
-  <link rel="stylesheet" href="{% static 'meteographer/style.css' %}"/>
+  <link rel="stylesheet" href="{% static 'broadcaster/style.css' %}"/>
 </head>
 <body>
   <h1>Meteography</h1>
@@ -15,11 +15,18 @@
     <ul class="camlist">
       {% for webcam in webcams %}
         <li>
-          <img src="{{ webcam.prediction.image }}" 
+          {% if webcam.latest_prediction %}
+            <img src="{{ webcam.latest_prediction.url }}"
                class="thumbnail" alt="Latest {{ webcam.name }} prediction" />
+          {% else %}
+            <img src="{% static 'broadcaster/img/noprediction.png' %}"
+               class="thumbnail" alt="No prediction available" />
+          {% endif %}
           <div>
             <header>{{ webcam.name }}</header>
-            <!--<p>Latest prediction done 5 min ago for 30 min later</p>-->
+            {% if webcam.latest_prediction %}
+              <p>Latest prediction done x min ago for y min later</p>
+            {% endif %}
           </div>
         </li>
       {% endfor %}

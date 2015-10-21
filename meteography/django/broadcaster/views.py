@@ -1,6 +1,7 @@
 import io
+import os.path
 
-from django.contrib.staticfiles.templatetags.staticfiles import static
+from django.views.static import serve as serve_file
 from django.http import HttpResponse, HttpResponseNotFound
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
@@ -8,16 +9,14 @@ from django.views.decorators.http import require_http_methods
 
 from meteography.django.broadcaster import forecast
 from meteography.django.broadcaster.models import Webcam, Picture
+from meteography.django.broadcaster.settings import WEBCAM_ROOT
 
 
 def index(request):
     webcams = Webcam.objects.order_by('name')
-
-    for webcam in webcams:
-        webcam.prediction = {
-            'image': static('meteographer/img/noprediction.png'),
-        }
-    context = {'webcams': webcams}
+    context = {
+        'webcams': webcams,
+    }
     return render(request, 'meteographer/index.html', context)
 
 
@@ -43,3 +42,8 @@ def picture(request, webcam_id, timestamp):
             prediction.save()
 
     return HttpResponse(status=204)
+
+
+def prediction(request, webcam_id, path):
+    # FIXME make production-ready
+    return serve_file(request, os.path.join(webcam_id, path), WEBCAM_ROOT)

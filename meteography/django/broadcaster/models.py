@@ -1,13 +1,23 @@
+import os.path
 import matplotlib.pylab as plt
 
 from django.db import models
 
+from meteography.django.broadcaster.settings import WEBCAM_URL
 from meteography.django.broadcaster.storage import webcam_fs
 
 
 class Webcam(models.Model):
     webcam_id = models.SlugField(max_length=16, primary_key=True)
     name = models.CharField(max_length=32)
+
+    def latest_prediction(self):
+        predictions = Prediction.objects.filter(params__webcam=self)
+        if predictions:
+            latest = predictions.latest()
+        else:
+            latest = None
+        return latest
 
     def store(self):
         webcam_fs.add_webcam(self.webcam_id)
@@ -58,6 +68,13 @@ class Prediction(models.Model):
     comp_date = models.DateTimeField('computation date')
     path = models.CharField(max_length=100)
 
+    class Meta:
+        get_latest_by = 'comp_date'
+
+    def url(self):
+        return os.path.join(WEBCAM_URL, self.path)
+
     def save(self, *args, **kwargs):
-        plt.imsave(self.path, self.sci_bytes)
+        with webcam_fs.fs.open(self.path, 'w') as fp:
+            plt.imsave(fp, self.sci_bytes)
         super(Prediction, self).save(*args, **kwargs)

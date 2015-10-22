@@ -2,9 +2,49 @@ import os.path
 import matplotlib.pylab as plt
 
 from django.db import models
+from django.forms import CharField as CharFormField
+from django.utils import timezone
 
 from meteography.django.broadcaster.settings import WEBCAM_URL
 from meteography.django.broadcaster.storage import webcam_fs
+
+
+class CommaSeparatedIntegerFormField(CharFormField):
+    def prepare_value(self, value):
+        return ','.join(map(str, value))
+
+
+class CommaSeparatedIntegerField(models.CommaSeparatedIntegerField):
+    """
+    Child of the django comma-separated field that behaves as one would expect
+    (i.e. the python type is a sequence of int)
+    """
+    default_validators = []
+
+    def from_db_value(self, value, expression, connection, context):
+        if value is None:
+            return value
+
+        return map(int, value.split(','))
+
+    def to_python(self, value):
+        if len(value) and isinstance(value[0], int):
+            return value
+
+        if value is None:
+            return value
+
+        return map(int, value.split(','))
+
+    def get_prep_value(self, value):
+        return ','.join(map(str, value))
+
+    def value_to_string(self, obj):
+        value = self._get_val_from_obj(obj)
+        return self.get_prep_value(value)
+
+    def formfield(self, **kwargs):
+        return CommaSeparatedIntegerFormField(**kwargs)
 
 
 class Webcam(models.Model):
@@ -39,7 +79,7 @@ class Picture:
 class PredictionParams(models.Model):
     webcam = models.ForeignKey(Webcam)
     name = models.SlugField(max_length=16)
-    intervals = models.CommaSeparatedIntegerField(max_length=128)
+    intervals = CommaSeparatedIntegerField(max_length=128)
 
     def save(self, *args, **kwargs):
         """
@@ -49,17 +89,12 @@ class PredictionParams(models.Model):
         -----
         This will erase any set with the same name!
         """
-        # converts csv string into list of ints, and back into string
-        if len(self.intervals):
-            self.intervals = map(int, self.intervals.split(','))
         # FIXME saving without changing should not erase data...
         webcam_fs.add_examples_set(self)
-        self.intervals = ','.join(map(str, self.intervals))
-
         super(PredictionParams, self).save(*args, **kwargs)
 
     def __unicode__(self):
-        return '%s.%s: [%s]' % (
+        return '%s.%s: %s' % (
             self.webcam.webcam_id, self.name, str(self.intervals))
 
 
@@ -73,6 +108,14 @@ class Prediction(models.Model):
 
     def url(self):
         return os.path.join(WEBCAM_URL, self.path)
+
+    def minutes_ago(self):
+        now = timezone.now()
+        ago = now - self.comp_date
+        return (ago.seconds // 60)
+
+    def minutes_target(self):
+        return (self.params.intervals[-1] // 60)
 
     def save(self, *args, **kwargs):
         with webcam_fs.fs.open(self.path, 'w') as fp:

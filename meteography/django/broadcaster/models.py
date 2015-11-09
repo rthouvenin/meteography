@@ -112,7 +112,7 @@ class Prediction(models.Model):
     def minutes_ago(self):
         now = timezone.now()
         ago = now - self.comp_date
-        return (ago.seconds // 60)
+        return ago
 
     def minutes_target(self):
         return (self.params.intervals[-1] // 60)

@@ -901,8 +901,9 @@ class DataSet:
         with its original shape (directly displayable by matplotlib)
         """
         ex_set = self._nodify(ex_set)
-        img = ex_set.output[i]
-        return img.reshape(self.img_shape)
+        img_ref = ex_set.img_refs[i][-1]
+        raw_data = self.imgset.get_pixels_at(img_ref)
+        return raw_data.reshape(self.img_shape)
 
     def split(self, train=.7, valid=.15, shuffle=False):
         """

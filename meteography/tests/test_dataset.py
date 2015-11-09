@@ -11,6 +11,7 @@ from meteography.dataset import ImageSet
 
 IMG_SIZE = 20
 
+
 def make_filedict(t, jitter=False):
     return {
         'name': str(t) + '.png',
@@ -279,7 +280,7 @@ class TestDataSet:
         assert(testset.input.shape[1] < prev_nb_feat)
         assert(testset.output.shape[1] < prev_imgdim)
 
-    def test_split_60_30(self, dataset):
+    def test_split_default(self, dataset):
         "default = 70% (66.5) training, 15% (14.25) validation, 15% test"
         dataset.split()
         self.check_length(dataset, 65, 14, 15)
@@ -289,3 +290,7 @@ class TestDataSet:
         assert(len(dataset.input_data) == 94)
         dataset.split(.8, .2)
         self.check_length(dataset, 75, 18, 1)
+
+    def test_getoutput(self, dataset):
+        pixels = dataset.output_img('test', 0)
+        assert(pixels.shape == (20, 20))

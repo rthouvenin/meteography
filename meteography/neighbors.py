@@ -14,7 +14,7 @@ class NearestNeighbors:
     def __init__(self):
         self.sknn = SKNN(1, algorithm='brute')
 
-    def fit(self, X, y):
+    def fit(self, X, y=None):
         self.X = X
         self.y = y
         self.batch_len = max(1, self.BATCH_SIZE // X.shape[1])
@@ -61,4 +61,7 @@ class NearestNeighbors:
             i_batch = i_batch[0][0]
             if i_batch != (batch.shape[0]-1) or b == 0:
                 nearest = b * self.batch_len + i_batch
+
+        if self.y is None:
+            return nearest
         return self.y[nearest]

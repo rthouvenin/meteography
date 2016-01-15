@@ -1,5 +1,17 @@
 To deploy dev django project the first time:
- - set env variable DJANGO_SETTINGS_MODULE=website.settings.dev
- - create DB: from website run './manage.py migrate'
- - create super user: from website run './manage.py superuser'
- - run server: from website run './manage.py runserver'
+ - git clone
+ - [create virtual env and activate it]
+ - python setup.py sdist
+ - pip install dist/meteography-0.1.tar.gz
+ - cd website/
+ - mkdir data cams
+ - create DB: 'python manage.py migrate'
+ - create super user: 'python manage.py createsuperuser'
+
+Use:
+ - run server: from website run 'python manage.py runserver'
+ - Go to admin section: http://<your domaine or IP>/admin
+ - log in with superuser
+ - add a webcam
+ - add a prediction params
+ - send snapshots to the REST API

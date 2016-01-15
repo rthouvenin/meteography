@@ -1,0 +1,2 @@
+recursive-include meteography/django/broadcaster/static *
+recursive-include meteography/django/broadcaster/templates *

@@ -11,7 +11,7 @@ from meteography.django.broadcaster.storage import webcam_fs
 
 class CommaSeparatedIntegerFormField(CharFormField):
     def prepare_value(self, value):
-        return ','.join(map(str, value))
+        return ','.join(map(str, value)) if value else ''
 
 
 class CommaSeparatedIntegerField(models.CommaSeparatedIntegerField):
@@ -37,7 +37,7 @@ class CommaSeparatedIntegerField(models.CommaSeparatedIntegerField):
         return map(int, value.split(','))
 
     def get_prep_value(self, value):
-        return ','.join(map(str, value))
+        return ','.join(map(str, value)) if value else ''
 
     def value_to_string(self, obj):
         value = self._get_val_from_obj(obj)

@@ -10,4 +10,11 @@ setup(
     author_email="romain.thouvenin@gmail.com",
     packages=find_packages(),
     include_package_data=True,
+    install_requires=[
+        'scipy',
+        'matplotlib',
+        'scikit-learn',
+        'tables>=3.1',
+        'Django>=1.8',
+    ],
 )

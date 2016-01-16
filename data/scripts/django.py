@@ -7,7 +7,6 @@ import time
 
 import requests
 
-#import util
 
 parser = argparse.ArgumentParser(
     description="Uploads webcam pictures to brodcaster API")
@@ -15,7 +14,6 @@ parser.add_argument('webcam')
 parser.add_argument('--host', default='localhost:8000')
 parser.add_argument('--count', type=int)
 parser.add_argument('--from-index', type=int)
-#parser.add_argument('--from-date', action=util.DateAction)
 args = parser.parse_args()
 
 

@@ -6,7 +6,7 @@ Utilities
 """
 
 import argparse
-import datetime
+from datetime import datetime
 
 
 class JsonProxy:

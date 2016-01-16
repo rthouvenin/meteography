@@ -493,6 +493,7 @@ class DataSet:
         self.fileh = fileh
         self.imgset = imageset
         self.img_shape = imageset.img_shape
+        self.is_reduced = imageset.pca is not None
         self.is_split = False
 
     @classmethod
@@ -584,7 +585,7 @@ class DataSet:
         return ex_set
 
     def init_set(self, name, hist_len=3, interval=600, future_time=1800,
-                 intervals=None, reduced=None, nb_ex=None):
+                 intervals=None, nb_ex=None):
         """
         Create a new node in '/examples' of the given `name`, that will store
         the input and output of examples for the given parameters.
@@ -607,9 +608,6 @@ class DataSet:
             element is the amount of time between the last image of the input
             and the output image. If None, the sequence is created from the
             values of `hist_len`, `interval` and `future_time`.
-        reduced : bool
-            Whether the input and output arrays should store dim-reduced images
-            If None, defaults to whether the underlying ImageSet is reduced
         nb_ex : int or None
             The number of expected examples that this set will contain, or None
             if unknown.
@@ -622,25 +620,19 @@ class DataSet:
             intervals = [interval] * (hist_len-1) + [future_time]
         else:
             hist_len = len(intervals)
-        if reduced is None:
-            reduced = self.imgset.pca is not None
-        if reduced is True and self.imgset.pca is None:
-            raise ValueError("""'reduced' is True but the imageset is not
-                             reduced""")
 
         ex_group = self.fileh.root.examples
         if name in ex_group:
             self.fileh.remove_node(ex_group, name, recursive=True)
         ex_set = self.fileh.create_group(ex_group, name)
         ex_set._v_attrs.intervals = intervals
-        ex_set._v_attrs.reduced = reduced
         self._create_set_arrays(ex_set, 'img_refs', 'input', 'output', nb_ex)
         return ex_set
 
     def _create_set_arrays(self, ex_set, refs_name, in_name, out_name, nb_ex):
         fh = self.fileh
         hist_len = len(ex_set._v_attrs.intervals)
-        if ex_set._v_attrs.reduced:
+        if self.is_reduced:
             imgdim = self.imgset.img_size
         else:
             imgdim = np.prod(self.img_shape)
@@ -662,20 +654,19 @@ class DataSet:
         return self._nodify(name)
 
     def make_set(self, name, hist_len=3, interval=600, future_time=1800,
-                 intervals=None, reduced=None):
+                 intervals=None):
         """
         Constructs a set of training examples from all the available images.
         If a node with the same name already exists, it is overwritten.
-        The meaning of the parameters is the same as for `create_set`
+        The meaning of the parameters is the same as for `init_set`
         """
         #Create pytables group and arrays
         newset = self.init_set(name, hist_len, interval, future_time,
-                               intervals, reduced, None)
+                               intervals, None)
         intervals = newset._v_attrs.intervals
-        reduced = newset._v_attrs.reduced
 
         #Find the representations of the data points
-        examples = self._find_examples(intervals, reduced)
+        examples = self._find_examples(intervals)
 
         img_refs = newset.img_refs
         input_data = newset.input
@@ -700,7 +691,7 @@ class DataSet:
         self.history_len = hist_len
         return newset
 
-    def _find_examples(self, intervals, reduced=True):
+    def _find_examples(self, intervals):
         """
         Build a list of tuples (input_images, output_value) to be used for
         training or validation.
@@ -713,12 +704,12 @@ class DataSet:
         assert all(intervals)
         examples = []
         for i, img in enumerate(self.imgset):
-            example = self._find_example(img, intervals, reduced)
+            example = self._find_example(img, intervals)
             if example is not None:
                 examples.append(example)
         return examples
 
-    def _find_example(self, img, intervals, reduced=True):
+    def _find_example(self, img, intervals):
         """
         Try to find a single example that has `img` as a target
 
@@ -728,7 +719,7 @@ class DataSet:
             the time when the image was taken, or a dict representing the image
             such as returned by `ImageSet.get_image`
         intervals: sequence
-            c.f. `create_set`
+            c.f. `init_set`
 
         Return
         ------
@@ -741,7 +732,7 @@ class DataSet:
         if img is None:
             return None
         #Search for input images that match the target
-        images = self._find_sequence(img, intervals, reduced)
+        images = self._find_sequence(img, intervals)
 
         #If we could find all of them, return an example
         hist_len = len(intervals)
@@ -751,7 +742,7 @@ class DataSet:
             return inputs, target
         return None
 
-    def _find_sequence(self, img, intervals, reduced=True):
+    def _find_sequence(self, img, intervals):
         """
         Find a sequence of images ending with `img` and matching `intervals`
         """
@@ -759,7 +750,7 @@ class DataSet:
         images = [img]
         for j, interval in enumerate(reversed(intervals)):
             prev_time = images[j]['time']
-            img_j = self.imgset.find_closest(prev_time, interval, reduced)
+            img_j = self.imgset.find_closest(prev_time, interval, self.is_reduced)
             if img_j:
                 images.append(img_j)
             else:
@@ -792,10 +783,9 @@ class DataSet:
             raise ValueError("Image with time=%d does not exist" % fuzzy_img)
         ex_set = self._nodify(ex_set)
         intervals = ex_set._v_attrs.intervals[:-1]
-        reduced = ex_set._v_attrs.reduced
         if target_time is None:
             target_time = ex_set._v_attrs.intervals[-1]
-        images = self._find_sequence(img, intervals, reduced)
+        images = self._find_sequence(img, intervals)
         if len(images) == len(intervals) + 1:
             prediction_time = target_time + images[-1]['time']
             return self._get_input_data(images, prediction_time)
@@ -820,7 +810,7 @@ class DataSet:
     def add_image(self, imgfile, ex_set=None):
         """
         Add an image to the underlying ImageSet, and creates a new example
-        using this image as expected prediction of the example.
+        in each example set using this image as expected prediction.
 
         Parameters
         ----------
@@ -829,17 +819,16 @@ class DataSet:
         setname : str
             Name of the dataset where the example should be added
         """
+        img = self.imgset.add_from_file(imgfile, ret_reduced=self.is_reduced)
+
         if ex_set is not None:
             ex_sets = [self._nodify(ex_set)]
         else:
             ex_sets = iter(self.fileh.root.examples)
 
         for ex_set in ex_sets:
-            # FIXME the image should be added once
             intervals = ex_set._v_attrs.intervals
-            reduced = ex_set._v_attrs.reduced
-            img = self.imgset.add_from_file(imgfile, ret_reduced=reduced)
-            example = self._find_example(img, intervals, reduced)
+            example = self._find_example(img, intervals)
 
             if example is not None:
                 imgs_in, img_out = example
@@ -863,16 +852,15 @@ class DataSet:
         """
         self.imgset.reduce_dim()
         for ex_set in self.fileh.root.examples:
-            self._recompute_set(ex_set, True)
+            self._recompute_set(ex_set)
 
-    def _recompute_set(self, ex_set, reduced):
+    def _recompute_set(self, ex_set):
         """
         Re-create the input and output arrays of `ex_set`.
         """
         nb_ex = ex_set.img_refs._v_expectedrows
         oldinput = ex_set.input
         hist_len = len(ex_set._v_attrs.intervals)
-        ex_set._v_attrs.reduced = reduced
         self._create_set_arrays(ex_set, None, 'newinput', 'newoutput', nb_ex)
         for refs_row in ex_set.img_refs:
             pixels_row = self.imgset.get_pixels_at(refs_row)

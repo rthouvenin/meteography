@@ -7,15 +7,20 @@ import time
 
 import requests
 
-parser = argparse.ArgumentParser()
+#import util
+
+parser = argparse.ArgumentParser(
+    description="Uploads webcam pictures to brodcaster API")
 parser.add_argument('webcam')
+parser.add_argument('--host', default='localhost:8000')
 parser.add_argument('--count', type=int)
 parser.add_argument('--from-index', type=int)
+#parser.add_argument('--from-date', action=util.DateAction)
 args = parser.parse_args()
 
 
-url_pattern = 'http://localhost:8000/webcams/%s/pictures/%s'
-campath = os.path.join('..', 'data', 'webcams', args.webcam)
+url_pattern = 'http://%s/webcams/%s/pictures/%s'
+campath = os.path.join('..', 'webcams', args.webcam)
 camfiles = os.listdir(campath)
 camfiles.sort()
 
@@ -28,7 +33,7 @@ for camfile in camfiles:
     filepath = os.path.join(campath, camfile)
     with open(filepath) as f:
         timestamp, __ = os.path.splitext(camfile)
-        url = url_pattern % (args.webcam, timestamp)
+        url = url_pattern % (args.host, args.webcam, timestamp)
         img_data = f.read()
 
         start_time = time.time()

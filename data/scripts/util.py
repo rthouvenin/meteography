@@ -5,6 +5,9 @@ Utilities
 @author: romain
 """
 
+import argparse
+import datetime
+
 
 class JsonProxy:
     """
@@ -37,3 +40,17 @@ class JsonProxy:
     def __repr__(self):
         """Delegates to source"""
         return self.source.__repr__()
+
+
+# Arguments parsing
+class DateAction(argparse.Action):
+    def __init__(self, option_strings, dest, **kwargs):
+        super(DateAction, self).__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        """Convert arg string value into datetime"""
+        if values:
+            val = datetime.strptime(values, '%Y%m%d%H%M')
+        else:
+            val = datetime.today()
+        setattr(namespace, self.dest, val)

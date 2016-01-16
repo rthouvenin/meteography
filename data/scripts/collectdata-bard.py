@@ -13,25 +13,13 @@ import os.path
 import time
 import urllib2
 
-
-# Arguments parsing
-class DateAction(argparse.Action):
-    def __init__(self, option_strings, dest, **kwargs):
-        super(DateAction, self).__init__(option_strings, dest, **kwargs)
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        """Convert arg string value into datetime"""
-        if values:
-            val = datetime.strptime(values, '%Y%m%d%H%M')
-        else:
-            val = datetime.today()
-        setattr(namespace, self.dest, val)
+import util
 
 parser = argparse.ArgumentParser(
     description="Collects webcam archives from meteobard.fr")
-parser.add_argument('start', action=DateAction,
+parser.add_argument('start', action=util.DateAction,
                     help="Start date, format yyyymmddhhmm")
-parser.add_argument('end', nargs='?', action=DateAction,
+parser.add_argument('end', nargs='?', action=util.DateAction,
                     help="End date, format yyyymmddhhmm, default: current date")
 args = parser.parse_args()
 

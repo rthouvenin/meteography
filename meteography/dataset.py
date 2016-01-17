@@ -702,7 +702,7 @@ class DataSet:
 
     def _find_examples(self, intervals):
         """
-        Build a list of tuples (input_images, output_value) to be used for
+        Generator of tuples (input_images, output_value) to be used for
         training or validation.
 
         Returns
@@ -711,12 +711,10 @@ class DataSet:
             representing examples, as returned by `_find_example`
         """
         assert all(intervals)
-        examples = []
         for i, img in enumerate(self.imgset):
             example = self._find_example(img, intervals)
             if example is not None:
-                examples.append(example)
-        return examples
+                yield example
 
     def _find_example(self, img, intervals):
         """

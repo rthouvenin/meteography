@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import logging
 import os.path
 import shutil
 
@@ -7,6 +8,8 @@ from PIL import Image
 
 from meteography.dataset import ImageSet, DataSet
 from meteography.django.broadcaster import settings
+
+logger = logging.getLogger(__name__)
 
 
 # FIXME turn into actual storage
@@ -50,6 +53,9 @@ class WebcamStorage:
         """
         Create the required files and directories for a new webcam
         """
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Creating webcam %s on file system" % webcam_id)
+
         # create pytables files
         hdf5_path = self.dataset_path(webcam_id)
         w, h = settings.WEBCAM_SIZE
@@ -60,6 +66,17 @@ class WebcamStorage:
         # create directories for pictures
         pics_path = self.fs.path(self.picture_path(webcam_id))
         os.makedirs(pics_path)
+
+    def delete_webcam(self, webcam_id):
+        """
+        Delete the files and directories related to a webcam
+        """
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Deleting webcam %s from file system" % webcam_id)
+
+        hdf5_path = self.dataset_path(webcam_id)
+        os.remove(hdf5_path)
+        shutil.rmtree(self.fs.path(webcam_id))
 
     def get_dataset(self, webcam_id):
         hdf5_path = self.dataset_path(webcam_id)
@@ -97,18 +114,25 @@ class WebcamStorage:
         """
         Create the directories and pytables group for a set of examples
         """
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Creating example set %s on file system" % params.name)
+
         cam_id = params.webcam.webcam_id
         pred_path = self.fs.path(self.prediction_path(cam_id, params.name))
-        if not os.path.exists(pred_path):
-            os.makedirs(pred_path)
+        # Make sure the directory is empty if it exists
+        shutil.rmtree(pred_path, ignore_errors=True)
+        os.makedirs(pred_path)
 
         with self.get_dataset(cam_id) as dataset:
-            dataset.init_set(params.name, intervals=params.intervals)
+            dataset.make_set(params.name, intervals=params.intervals)
 
     def delete_examples_set(self, params):
         """
         Remove the directories and pytables group for a set of examples
         """
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Deleting example set %s from file system" % params.name)
+
         cam_id = params.webcam.webcam_id
         pred_path = self.fs.path(self.prediction_path(cam_id, params.name))
         shutil.rmtree(pred_path)

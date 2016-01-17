@@ -64,6 +64,9 @@ class Webcam(models.Model):
     def store(self):
         webcam_fs.add_webcam(self.webcam_id)
 
+    def post_delete(self):
+        webcam_fs.delete_webcam(self.webcam_id)
+
     def __unicode__(self):
         return self.name
 
@@ -105,10 +108,6 @@ class PredictionParams(models.Model):
         return '%s.%s: %s' % (
             self.webcam.webcam_id, self.name, str(self.intervals))
 
-@receiver(post_delete, sender=PredictionParams)
-def params_post_delete(sender, instance, **kwargs):
-    instance.post_delete()
-
 
 class Prediction(models.Model):
     params = models.ForeignKey(PredictionParams)
@@ -133,3 +132,9 @@ class Prediction(models.Model):
         with webcam_fs.fs.open(self.path, 'w') as fp:
             plt.imsave(fp, self.sci_bytes)
         super(Prediction, self).save(*args, **kwargs)
+
+
+@receiver(post_delete, sender=PredictionParams)
+@receiver(post_delete, sender=Webcam)
+def models_post_delete(sender, instance, **kwargs):
+    instance.post_delete()

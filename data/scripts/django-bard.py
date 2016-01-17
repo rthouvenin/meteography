@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument('webcam')
 parser.add_argument('fromday')
 parser.add_argument('today')
-parser.add_argument('--host', default='localhost')
+parser.add_argument('--host', default='localhost:8000')
 args = parser.parse_args()
 
 

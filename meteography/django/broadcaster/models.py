@@ -5,7 +5,6 @@ from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.forms import CharField as CharFormField
-from django.utils import timezone
 
 from meteography.django.broadcaster.settings import WEBCAM_URL
 from meteography.django.broadcaster.storage import webcam_fs
@@ -119,11 +118,6 @@ class Prediction(models.Model):
 
     def url(self):
         return os.path.join(WEBCAM_URL, self.path)
-
-    def minutes_ago(self):
-        now = timezone.now()
-        ago = now - self.comp_date
-        return ago
 
     def minutes_target(self):
         return (self.params.intervals[-1] // 60)

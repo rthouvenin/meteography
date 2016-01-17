@@ -26,8 +26,7 @@
             <header>{{ webcam.name }}</header>
             {% if webcam.latest_prediction %}
               <p>
-                Latest prediction done
-                {{webcam.latest_prediction.minutes_ago}} ago
+                Latest prediction done on {{webcam.latest_prediction.comp_date}}
                 for {{webcam.latest_prediction.minutes_target}} min later
               </p>
             {% endif %}

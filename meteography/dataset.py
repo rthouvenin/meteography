@@ -621,9 +621,13 @@ class DataSet:
         else:
             hist_len = len(intervals)
 
+        self.delete_set(name)
+
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("Creating a new set of examples %s with params %s"
+                        % (name, intervals))
+
         ex_group = self.fileh.root.examples
-        if name in ex_group:
-            self.fileh.remove_node(ex_group, name, recursive=True)
         ex_set = self.fileh.create_group(ex_group, name)
         ex_set._v_attrs.intervals = intervals
         self._create_set_arrays(ex_set, 'img_refs', 'input', 'output', nb_ex)
@@ -690,6 +694,18 @@ class DataSet:
         self.output_data = output_data
         self.history_len = hist_len
         return newset
+
+    def delete_set(self, name):
+        """
+        Delete a set of training examples.
+        Silent ignore if the set does not exist.
+        """
+        ex_group = self.fileh.root.examples
+        if name in ex_group:
+            if logger.isEnabledFor(logging.INFO):
+                logger.info("Deleting the set of examples %s" % name)
+            self.fileh.remove_node(ex_group, name, recursive=True)
+            self.fileh.flush()
 
     def _find_examples(self, intervals):
         """

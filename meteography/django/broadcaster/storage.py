@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os.path
+import shutil
 
 from django.core.files.storage import FileSystemStorage
 from PIL import Image
@@ -103,6 +104,16 @@ class WebcamStorage:
 
         with self.get_dataset(cam_id) as dataset:
             dataset.init_set(params.name, intervals=params.intervals)
+
+    def delete_examples_set(self, params):
+        """
+        Remove the directories and pytables group for a set of examples
+        """
+        cam_id = params.webcam.webcam_id
+        pred_path = self.fs.path(self.prediction_path(cam_id, params.name))
+        shutil.rmtree(pred_path)
+        with self.get_dataset(cam_id) as dataset:
+            dataset.delete_set(params.name)
 
 # Default storage instance
 webcam_fs = WebcamStorage(settings.WEBCAM_ROOT)

@@ -2,6 +2,8 @@ import os.path
 import matplotlib.pylab as plt
 
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.forms import CharField as CharFormField
 from django.utils import timezone
 
@@ -93,9 +95,19 @@ class PredictionParams(models.Model):
         webcam_fs.add_examples_set(self)
         super(PredictionParams, self).save(*args, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        super(PredictionParams, self).delete(*args, **kwargs)
+
+    def post_delete(self):
+        webcam_fs.delete_examples_set(self)
+
     def __unicode__(self):
         return '%s.%s: %s' % (
             self.webcam.webcam_id, self.name, str(self.intervals))
+
+@receiver(post_delete, sender=PredictionParams)
+def params_post_delete(sender, instance, **kwargs):
+    instance.post_delete()
 
 
 class Prediction(models.Model):

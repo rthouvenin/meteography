@@ -114,30 +114,38 @@ class WebcamStorage:
         """
         Create the directories and pytables group for a set of examples
         """
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Creating example set %s on file system" % params.name)
+        logger.info("Creating example set %s on file system", params.name)
 
         cam_id = params.webcam.webcam_id
         pred_path = self.fs.path(self.prediction_path(cam_id, params.name))
-        # Make sure the directory is empty if it exists
-        shutil.rmtree(pred_path, ignore_errors=True)
-        os.makedirs(pred_path)
+        try:
+            # Make sure the directory is empty if it exists
+            shutil.rmtree(pred_path, ignore_errors=True)
+            os.makedirs(pred_path)
 
-        with self.get_dataset(cam_id) as dataset:
-            dataset.make_set(params.name, intervals=params.intervals)
+            with self.get_dataset(cam_id) as dataset:
+                dataset.make_set(params.name, intervals=params.intervals)
+        except Exception:
+            logger.exception("Error while creating set %s", params.name)
+        else:
+            logger.info("Done creating the set %s", params.name)
 
     def delete_examples_set(self, params):
         """
         Remove the directories and pytables group for a set of examples
         """
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Deleting example set %s from file system" % params.name)
+        logger.info("Deleting example set %s from file system", params.name)
 
         cam_id = params.webcam.webcam_id
         pred_path = self.fs.path(self.prediction_path(cam_id, params.name))
-        shutil.rmtree(pred_path)
-        with self.get_dataset(cam_id) as dataset:
-            dataset.delete_set(params.name)
+        try:
+            shutil.rmtree(pred_path)
+            with self.get_dataset(cam_id) as dataset:
+                dataset.delete_set(params.name)
+        except Exception:
+            logger.exception("Error while deleting set %s", params.name)
+        else:
+            logger.info("Done deleting the set %s", params.name)
 
 # Default storage instance
 webcam_fs = WebcamStorage(settings.WEBCAM_ROOT)

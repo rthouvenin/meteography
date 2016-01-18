@@ -1,4 +1,6 @@
 import os.path
+import threading
+
 import matplotlib.pylab as plt
 
 from django.db import models
@@ -87,18 +89,21 @@ class PredictionParams(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Create an set of examples in the dataset of the cam before saving in DB
+        Create a set of examples in DB and in the dataset of the cam.
+        The update of the dataset is done asynchronously as it may take time
+        to read all the existing images of the cam.
+
+        TODO: race conditions with image upload
+        TODO: what if the dataset update fail? the DB is already updated
 
         Note:
         -----
         This will erase any set with the same name!
         """
-        # FIXME saving without changing should not erase data...
-        webcam_fs.add_examples_set(self)
         super(PredictionParams, self).save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        super(PredictionParams, self).delete(*args, **kwargs)
+        # FIXME saving without changing should not erase data (prevent in UI?)
+        t = threading.Thread(target=webcam_fs.add_examples_set, args=[self])
+        t.start()
 
     def post_delete(self):
         webcam_fs.delete_examples_set(self)

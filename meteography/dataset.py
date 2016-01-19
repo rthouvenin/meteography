@@ -389,6 +389,7 @@ class ImageSet:
             sample_size = min(nb_images, sample_size)
 
         #Compute PCA components and save them
+        logger.info("Computing the PCA model with %d samples", sample_size)
         sample = self._sample(sample_size)
         #FIXME: choose an algo
         self.pca = PCA(n_components=n_components).fit(sample)
@@ -412,6 +413,7 @@ class ImageSet:
         nb_chunks = nb_images // chunk_size
         if nb_images % chunk_size:
             nb_chunks += 1
+        logger.info("Applying the reduction in %d chunks", nb_chunks)
         for c in range(nb_chunks):
             s = c * chunk_size
             e = min(nb_images, s + chunk_size)
@@ -862,6 +864,7 @@ class DataSet:
         """
         self.imgset.reduce_dim()
         for ex_set in self.fileh.root.examples:
+            logger.info("Applying the reduction to set %s", ex_set._v_name)
             self._recompute_set(ex_set)
 
     def _recompute_set(self, ex_set):

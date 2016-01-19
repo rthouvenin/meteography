@@ -2,6 +2,7 @@
 from __future__ import unicode_literals
 
 from django.db import migrations, models
+import meteography.django.broadcaster.models
 
 
 class Migration(migrations.Migration):
@@ -14,15 +15,19 @@ class Migration(migrations.Migration):
             name='Prediction',
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
-                ('timestamp', models.DateTimeField(verbose_name=b'computation date')),
+                ('comp_date', models.DateTimeField(verbose_name=b'computation date')),
+                ('path', models.CharField(max_length=100)),
             ],
+            options={
+                'get_latest_by': 'comp_date',
+            },
         ),
         migrations.CreateModel(
             name='PredictionParams',
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('name', models.SlugField(max_length=16)),
-                ('intervals', models.CommaSeparatedIntegerField(max_length=128)),
+                ('intervals', meteography.django.broadcaster.models.CommaSeparatedIntegerField(max_length=128)),
             ],
         ),
         migrations.CreateModel(
@@ -41,10 +46,5 @@ class Migration(migrations.Migration):
             model_name='prediction',
             name='params',
             field=models.ForeignKey(to='broadcaster.PredictionParams'),
-        ),
-        migrations.AddField(
-            model_name='prediction',
-            name='webcam',
-            field=models.ForeignKey(to='broadcaster.Webcam'),
         ),
     ]

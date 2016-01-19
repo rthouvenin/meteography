@@ -27,7 +27,6 @@ class CommaSeparatedIntegerField(models.CommaSeparatedIntegerField):
     def from_db_value(self, value, expression, connection, context):
         if value is None:
             return value
-
         return map(int, value.split(','))
 
     def to_python(self, value):
@@ -53,6 +52,7 @@ class CommaSeparatedIntegerField(models.CommaSeparatedIntegerField):
 class Webcam(models.Model):
     webcam_id = models.SlugField(max_length=16, primary_key=True)
     name = models.CharField(max_length=32)
+    compressed = models.BooleanField(default=False)
 
     def latest_prediction(self):
         predictions = Prediction.objects.filter(params__webcam=self)
@@ -64,6 +64,11 @@ class Webcam(models.Model):
 
     def store(self):
         webcam_fs.add_webcam(self.webcam_id)
+
+    def compress(self):
+        t = threading.Thread(target=webcam_fs.reduce_dataset,
+                             args=[self.webcam_id])
+        t.start()
 
     def post_delete(self):
         webcam_fs.delete_webcam(self.webcam_id)

@@ -53,8 +53,7 @@ class WebcamStorage:
         """
         Create the required files and directories for a new webcam
         """
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Creating webcam %s on file system" % webcam_id)
+        logger.info("Creating webcam %s on file system", webcam_id)
 
         # create pytables files
         hdf5_path = self.dataset_path(webcam_id)
@@ -71,12 +70,24 @@ class WebcamStorage:
         """
         Delete the files and directories related to a webcam
         """
-        if logger.isEnabledFor(logging.INFO):
-            logger.info("Deleting webcam %s from file system" % webcam_id)
+        logger.info("Deleting webcam %s from file system", webcam_id)
 
         hdf5_path = self.dataset_path(webcam_id)
         os.remove(hdf5_path)
         shutil.rmtree(self.fs.path(webcam_id))
+
+    def reduce_dataset(self, webcam_id):
+        """
+        Run dimensionality reduction on the data of the webcam
+        """
+        logger.info("Reducing webcam %s", webcam_id)
+        try:
+            with self.get_dataset(webcam_id) as dataset:
+                dataset.reduce_dim()
+        except Exception:
+            logger.exception("Error while reducing webcam %s", webcam_id)
+        else:
+            logger.info("Done reducing webcam %s", webcam_id)
 
     def get_dataset(self, webcam_id):
         hdf5_path = self.dataset_path(webcam_id)

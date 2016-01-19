@@ -493,8 +493,11 @@ class DataSet:
         self.fileh = fileh
         self.imgset = imageset
         self.img_shape = imageset.img_shape
-        self.is_reduced = imageset.pca is not None
         self.is_split = False
+
+    @property
+    def is_reduced(self):
+        return self.imgset.pca is not None
 
     @classmethod
     def create(cls, imgset, thefile=None):
@@ -897,7 +900,7 @@ class DataSet:
         """
         ex_set = self._nodify(ex_set)
         img_ref = ex_set.img_refs[i][-1]
-        raw_data = self.imgset.get_pixels_at(img_ref)
+        raw_data = self.imgset.get_pixels_at(img_ref, False)
         return raw_data.reshape(self.img_shape)
 
     def split(self, train=.7, valid=.15, shuffle=False):

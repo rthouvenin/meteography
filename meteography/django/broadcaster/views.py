@@ -17,7 +17,7 @@ def index(request):
     context = {
         'webcams': webcams,
     }
-    return render(request, 'meteographer/index.html', context)
+    return render(request, 'broadcaster/index.html', context)
 
 
 @csrf_exempt

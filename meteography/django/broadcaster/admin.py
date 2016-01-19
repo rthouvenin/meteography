@@ -4,6 +4,9 @@ from meteography.django.broadcaster.models import (
     Webcam, PredictionParams, Prediction)
 
 
+admin.site.site_header = "Meteography administration"
+
+
 class ReadOnlyAdmin(admin.ModelAdmin):
     """A base class for read-only models"""
     readonly_fields = []
@@ -22,7 +25,15 @@ class ReadOnlyAdmin(admin.ModelAdmin):
 @admin.register(Webcam)
 class WebcamAdmin(admin.ModelAdmin):
     list_display = ('name', )
-    fields = ('webcam_id', 'name')
+    fieldsets = (
+        (None, {'fields': ('webcam_id', 'name')}),
+        ('Compression', {
+            'fields': ('compressed', ),
+            'description': """Compression can be used to reduce the space taken
+                by the webcam data and improve computation speed, but may
+                reduce the quality of the predictions.""",
+        }),
+    )
 
     def get_readonly_fields(self, request, obj=None):
         if obj is not None:
@@ -34,6 +45,9 @@ class WebcamAdmin(admin.ModelAdmin):
         """Init webcam storage before saving the model, in case of create"""
         if not change:
             webcam.store()
+        elif webcam.compressed:
+            # FIXME improve workflow
+            webcam.compress()
         webcam.save()
 
 

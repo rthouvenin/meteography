@@ -16,7 +16,7 @@ def make_filedict(t, jitter=False):
     return {
         'name': str(t) + '.png',
         'img_time': t + (random.randint(-2, 2) if jitter else 0),
-        'data': np.random.rand(IMG_SIZE*IMG_SIZE)
+        'pixels': np.random.rand(IMG_SIZE*IMG_SIZE)
     }
 
 
@@ -34,8 +34,8 @@ def imgset_fixture(request, tmpdir_factory, fname, images):
 
 
 @pytest.fixture(scope='session')
-def imgfile(tmpdir_factory):
-    filename = tmpdir_factory.mktemp('img').join('12000.jpg').strpath
+def imgfile(tmpdir_factory, t=12000):
+    filename = tmpdir_factory.mktemp('img').join('%d.jpg' % t).strpath
     pixels = np.zeros((IMG_SIZE, IMG_SIZE))
     img = Image.fromarray(pixels, mode='L')
     img.save(filename)
@@ -50,6 +50,15 @@ def imageset(request, tmpdir_factory):
 def bigimageset(request, tmpdir_factory):
     random.seed(42)  # Reproducible tests
     images = [make_filedict(t, True) for t in range(6000, 12000, 60)]
+    return imgset_fixture(request, tmpdir_factory, 'bigimageset.h5', images)
+
+@pytest.fixture
+def filedimageset(request, tmpdir_factory):
+    "Same as bigimageset, but image files actually exist"
+    random.seed(42)  # Reproducible tests
+    images = [make_filedict(t, True) for t in range(6000, 12000, 60)]
+    for img in images:
+        img['name'] = imgfile(tmpdir_factory, img['img_time'])
     return imgset_fixture(request, tmpdir_factory, 'bigimageset.h5', images)
 
 @pytest.fixture
@@ -72,13 +81,13 @@ class TestImageSet:
         "get_image and get_pixels_at should produce same pixels"
         img1 = imageset.get_image(42)
         pix2 = imageset.get_pixels_at(img1['id'])
-        assert(np.allclose(img1['data'], pix2))
+        assert(np.allclose(img1['pixels'], pix2))
 
     def test_pixelsat_seq(self, imageset):
         "Read pixels from a tuple of indices"
         img1 = imageset.get_image(42)
         pixels = imageset.get_pixels_at((img1['id'], 0))
-        assert(np.allclose(img1['data'], pixels[0]))
+        assert(np.allclose(img1['pixels'], pixels[0]))
         assert(not np.allclose(pixels[1], pixels[0]))
 
     def test_pixelsat_seq_reduced(self, imageset):
@@ -94,13 +103,11 @@ class TestImageSet:
         assert(img['id'] == prev_len)
 
     def test_addfromfile_reduced(self, bigimageset, imgfile):
-        "If the set is reduced, both raw and reduced pixels should be added"
+        "Adding a file should still work after reducing the set"
         bigimageset.reduce_dim()
         prev_len = len(bigimageset)
         bigimageset.add_from_file(imgfile)
-        new_len = len(bigimageset)
-        assert(new_len == prev_len+1)
-        assert(len(bigimageset.fileh.root.images.pcapixels) == new_len)
+        assert(len(bigimageset) == prev_len+1)
 
     def test_sort(self, imageset):
         "The first element should have the smallest time"
@@ -142,18 +149,20 @@ class TestImageSet:
         bigimageset.reduce_dim()
         img0 = next(iter(bigimageset))
         assert(len(bigimageset) == prev_length)
-        assert(len(bigimageset.fileh.root.images.pcapixels) == prev_length)
-        assert(len(img0['data']) <= len(bigimageset) < IMG_SIZE*IMG_SIZE)
+        assert(bigimageset.pca is not None)
+        assert(bigimageset.fileh.root.images.pcamodel is not None)
+        assert(len(img0['pixels']) <= len(bigimageset) < IMG_SIZE*IMG_SIZE)
 
-    def test_reduce_twice(self, bigimageset):
+    def test_reduce_twice(self, filedimageset):
         "Reducing twice the same set should not cause any problem"
-        prev_length = len(bigimageset)
-        bigimageset.reduce_dim()
-        bigimageset.reduce_dim()
-        img0 = next(iter(bigimageset))
-        assert(len(bigimageset) == prev_length)
-        assert(len(bigimageset.fileh.root.images.pcapixels) == prev_length)
-        assert(len(img0['data']) <= len(bigimageset) < IMG_SIZE*IMG_SIZE)
+        prev_length = len(filedimageset)
+        filedimageset.reduce_dim()
+        filedimageset.reduce_dim()
+        img0 = next(iter(filedimageset))
+        assert(len(filedimageset) == prev_length)
+        assert(filedimageset.pca is not None)
+        assert(filedimageset.fileh.root.images.pcamodel is not None)
+        assert(len(img0['pixels']) <= len(filedimageset) < IMG_SIZE*IMG_SIZE)
 
     def test_reduce_smallsample(self, bigimageset):
         "More images than sample size"
@@ -162,23 +171,24 @@ class TestImageSet:
         bigimageset.reduce_dim(sample_size)
         img0 = next(iter(bigimageset))
         assert(len(bigimageset) == prev_length)
-        assert(len(bigimageset.fileh.root.images.pcapixels) == prev_length)
-        assert(len(img0['data']) == sample_size)
+        assert(bigimageset.pca is not None)
+        assert(bigimageset.fileh.root.images.pcamodel is not None)
+        assert(len(img0['pixels']) == sample_size)
 
-    def test_reduce_manyimg(self, bigimageset):
+    def test_reduce_manyimg(self, filedimageset, tmpdir_factory):
         """More images than pixels but less than sample size
         won't reduce the dimensionality, even after a first reduction"""
-        bigimageset.reduce_dim()
-        images = [make_filedict(t, True) for t in range(12000, 36000, 60)]
+        filedimageset.reduce_dim()
+        images = [make_filedict(t, True) for t in range(6000, 30000, 60)]
         for img in images:
-            bigimageset._add_image(**img)
-        bigimageset.fileh.flush()
-        prev_length = len(bigimageset)
-        bigimageset.reduce_dim(450)
-        img0 = next(iter(bigimageset))
-        assert(len(bigimageset) == prev_length)
-        assert(len(bigimageset.fileh.root.images.pcapixels) == prev_length)
-        assert(len(img0['data']) == IMG_SIZE*IMG_SIZE)
+            img['name'] = imgfile(tmpdir_factory, img['img_time'])
+            filedimageset._add_image(**img)
+        filedimageset.fileh.flush()
+        prev_length = len(filedimageset)
+        filedimageset.reduce_dim(450)
+        img0 = next(iter(filedimageset))
+        assert(len(filedimageset) == prev_length)
+        assert(len(img0['pixels']) == IMG_SIZE*IMG_SIZE)
 
 
 @pytest.fixture

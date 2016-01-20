@@ -33,7 +33,8 @@ def image_descriptor(img_size):
     Parameters
     ----------
     img_size : int
-        The number of pixels multiplied by the number of bands
+        The number of pixels multiplied by the number of bands,
+        or the number of dimensions after reduction
     """
     return {
         'name': tables.StringCol(256),
@@ -98,10 +99,11 @@ class ImageSet:
         if '/images/pcamodel' in self.fileh:
             fn = filenode.open_node(self.fileh.root.images.pcamodel, 'r')
             self.pca = pickle.load(fn)
+            self.is_reduced = True
             self.img_size = self.pca.components_.shape[0]
             fn.close()
         else:
-            self.pca = None
+            self.is_reduced = False
             self.img_size = np.prod(self.img_shape)
         self._times = None
 
@@ -165,11 +167,11 @@ class ImageSet:
         self.close()
         return False
 
-    def _img_dict(self, name, time, data, img_id):
+    def _img_dict(self, name, time, pixels, img_id):
         return {
             'name': name,
             'time': time,
-            'data': data,
+            'pixels': pixels,
             'id': img_id
         }
 
@@ -177,11 +179,10 @@ class ImageSet:
         """
         Create from a row a dictionary with the details of the image in that
         row. If `ret_reduced` is True and the ImageSet was reduced, the key
-        'data' will contain the PCA-transformed data.
+        'pixels' will contain the PCA-transformed data.
         """
-        if ret_reduced and self.pca is not None:
-            pca_pixels = self.fileh.root.images.pcapixels
-            pixels = pca_pixels[row.nrow]
+        if not ret_reduced and self.is_reduced:
+            pixels = self._data_from_file(row['name'])
         else:
             pixels = row['pixels']
         img = self._img_dict(row['name'], row['time'], pixels, row.nrow)
@@ -190,7 +191,7 @@ class ImageSet:
     def get_image(self, t, ret_reduced=True):
         """
         Returns as a dictionary the details of the image taken at time `t`.
-        If `ret_reduced` is True and the ImageSet was reduced, the key 'data'
+        If `ret_reduced` is True and the ImageSet was reduced, the key 'pixels'
         will contain the PCA-transformed data.
         """
         rows = self.table.where('time == t')
@@ -200,11 +201,12 @@ class ImageSet:
         return None
 
     def _pcapixels(self, idx):
-        return self.fileh.root.images.pcapixels[idx, :]
+        rows = self.table.itersequence(idx)
+        return np.array([r['pixels'] for r in rows])
 
     def _realpixels(self, idx):
         rows = self.table.itersequence(idx)
-        return np.array([r['pixels'] for r in rows])
+        return np.array([self._data_from_file(r['name']) for r in rows])
 
     def get_pixels_at(self, idx, ret_reduced=True):
         """
@@ -218,10 +220,10 @@ class ImageSet:
             If True and the ImageSet was reduced, the PCA-transformed data
             is returned
         """
-        if ret_reduced and self.pca is not None:
-            source = self._pcapixels
-        else:
+        if not ret_reduced and self.is_reduced:
             source = self._realpixels
+        else:
+            source = self._pcapixels
 
         #numpy scalars also have a __getitem__ ...
         if hasattr(idx, '__getitem__') and not np.isscalar(idx):
@@ -242,46 +244,57 @@ class ImageSet:
         """Return the number of images in the set."""
         return self.table.nrows
 
-    def _add_image(self, name, img_time, data, ret_reduced=True):
+    def _add_image(self, name, img_time, pixels, ret_reduced=True):
         # FIXME check it does not exist
         img_id = self.table.nrows
+        row_pixels = pixels
+        ret_pixels = pixels
+
+        if self.is_reduced:
+            row_pixels = self.pca.transform([pixels])
+            if ret_reduced:
+                ret_pixels = row_pixels[0]
+
         row = self.table.row
         row['name'] = name
         row['time'] = img_time
-        row['pixels'] = data
+        row['pixels'] = row_pixels
         row.append()
-        if self.pca is not None:
-            reduced = self.pca.transform([data])
-            self.fileh.root.images.pcapixels.append(reduced)
-            if ret_reduced:
-                data = reduced[0]
-        #update or invalidate times cache
+
+        # update or invalidate times cache
         if self._times is not None and img_time > self._times[-1]:
             self._times.append(img_time)
         else:
             self._times = None
-        return self._img_dict(name, img_time, data, img_id)
 
-    def _add_from_file(self, imgfile, name_parser, ret_reduced=True):
-        """
-        `add_from_file` without flushing the table.
-        """
+        return self._img_dict(name, img_time, ret_pixels, img_id)
+
+    def _data_from_file(self, imgfile):
         with open(imgfile, 'rb') as fp:
             img = PIL.Image.open(fp)
             img_shape = img.size[1], img.size[0]
             if img_shape != self.img_shape[:2]:
                 raise ValueError("The image has shape %s instead of %s"
                                  % (img_shape, self.img_shape[:2]))
-            #Convert the image to greyscale or RGB if necessary
+
+            # Convert the image to greyscale or RGB if necessary
             expected_bands = GREY_BANDS if self.is_grey else COLOR_BANDS
             img_bands = img.getbands()
             if img_bands != expected_bands:
                 img = img.convert(''.join(expected_bands))
             data = np.array(img, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
-        #Flatten the data in case of RGB tuples
-        if data.ndim > 1:
-            data = data.flatten()
 
+            # Flatten the data in case of RGB tuples
+            if data.ndim > 1:
+                data = data.flatten()
+
+            return data
+
+    def _add_from_file(self, imgfile, name_parser, ret_reduced=True):
+        """
+        `add_from_file` without flushing the table.
+        """
+        data = self._data_from_file(imgfile)
         img_time = name_parser(imgfile)
         return self._add_image(imgfile, img_time, data, ret_reduced)
 
@@ -358,13 +371,13 @@ class ImageSet:
         ndarray of shape (`sample_size`, `img_size`).
         """
         if sample_size == self.table.nrows:
-            sample = self.table.cols.pixels[:]
+            if self.is_reduced:
+                sample = self.get_pixels_at(range(len(self)), False)
+            else:
+                sample = self.table.cols.pixels[:]
         else:
             index = random.sample(xrange(self.table.nrows), sample_size)
-            imgdim = np.prod(self.img_shape)
-            sample = np.empty((sample_size, imgdim), dtype=PIXEL_TYPE)
-            for i, img in enumerate(self.table.itersequence(index)):
-                sample[i] = img['pixels']
+            sample = self.get_pixels_at(index, False)
         return sample
 
     def reduce_dim(self, sample_size=1000, n_components=None):
@@ -380,6 +393,7 @@ class ImageSet:
             used. If greater than 1, it indicates the maximum number of images
             to use.
         """
+        # Compute the sample size and create it
         nb_images = self.table.nrows
         if not sample_size:
             sample_size = nb_images
@@ -387,38 +401,45 @@ class ImageSet:
             sample_size = int(nb_images * sample_size)
         else:
             sample_size = min(nb_images, sample_size)
-
-        #Compute PCA components and save them
-        logger.info("Computing the PCA model with %d samples", sample_size)
         sample = self._sample(sample_size)
+
+        # Compute PCA components from the sample.
         #FIXME: choose an algo
         self.pca = PCA(n_components=n_components).fit(sample)
         ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
 
+        # Store the reduction matrix
         if 'pcamodel' in self.fileh.root.images:
             self.fileh.root.images.pcamodel.remove()
-            self.fileh.root.images.pcapixels.remove()
-
         fn = filenode.new_node(self.fileh, where='/images', name='pcamodel')
         pickle.dump(self.pca, fn, pickle.HIGHEST_PROTOCOL)
         fn.close()
 
-        #Apply PCA transformation to all the images in chunks
+        # Create the new table
         self.img_size = self.pca.components_.shape[0]
-        pixels = self.table.cols.pixels
-        pca_pixels = self.fileh.create_earray('/images', 'pcapixels',
-                                              shape=(0, self.img_size),
-                                              atom=tables.FloatAtom())
-        chunk_size = sample_size
-        nb_chunks = nb_images // chunk_size
-        if nb_images % chunk_size:
-            nb_chunks += 1
-        logger.info("Applying the reduction in %d chunks", nb_chunks)
-        for c in range(nb_chunks):
-            s = c * chunk_size
-            e = min(nb_images, s + chunk_size)
-            pca_pixels.append(self.pca.transform(pixels[s:e]))
-            pca_pixels.flush()
+        desc = image_descriptor(self.img_size)
+        pca_table = self.fileh.create_table('/images', 'pcaset', desc)
+        self.table.attrs._f_copy(pca_table)
+
+        # Apply PCA transformation to all the images,
+        # and copy the data to the new table
+        row = pca_table.row
+        for img in self.table.iterrows():
+            # Ensure we get un-reduced data, in case this is not the first
+            # time the set is being reduced
+            img = self._img_from_row(img, False)
+            row['name'] = img['name']
+            row['time'] = img['time']
+            row['pixels'] = self.pca.transform([img['pixels']])
+            row.append()
+        pca_table.flush()
+        pca_table.cols.time.create_csindex()
+
+        # Replace the old table
+        self.table.remove()
+        pca_table.rename('imgset')
+        self.table = pca_table
+        self.is_reduced = True
 
     def recover_images(self, pca_pixels):
         """
@@ -428,7 +449,7 @@ class ImageSet:
         ----------
         pca_pixels : array
         """
-        if self.pca is None:
+        if not self.is_reduced:
             return pca_pixels
         pixels_out = self.pca.inverse_transform(pca_pixels)
         return pixels_out.clip(0, 1, pixels_out)
@@ -499,7 +520,7 @@ class DataSet:
 
     @property
     def is_reduced(self):
-        return self.imgset.pca is not None
+        return self.imgset.is_reduced
 
     @classmethod
     def create(cls, imgset, thefile=None):
@@ -685,7 +706,7 @@ class DataSet:
             img_refs.append([ids])
             self._get_input_data(example[0], example[1]['time'], input_row)
             input_data.append(input_rows)
-            output_data.append([example[1]['data']])
+            output_data.append([example[1]['pixels']])
 
         img_refs.flush()
         input_data.flush()
@@ -808,14 +829,14 @@ class DataSet:
         Write the input pixels and features of `example` in array `ex_data`.
         If `ex_data` is None, a new array is created.
         """
-        imgdim = len(ex_input[0]['data'])
+        imgdim = len(ex_input[0]['pixels'])
         hist_len = len(ex_input)
         if ex_data is None:
             nb_feat = (imgdim+1) * hist_len
             ex_data = np.empty((nb_feat,), PIXEL_TYPE)
 
         for j, img in enumerate(ex_input):
-            ex_data[imgdim*j:imgdim*(j+1)] = img['data']
+            ex_data[imgdim*j:imgdim*(j+1)] = img['pixels']
             ex_data[j-hist_len] = target_time - img['time']
         return ex_data
 
@@ -849,7 +870,7 @@ class DataSet:
                 ex_set.img_refs.append([ids])
                 input_row = self._get_input_data(imgs_in, img_out['time'])
                 ex_set.input.append([input_row])
-                ex_set.output.append([img_out['data']])
+                ex_set.output.append([img_out['pixels']])
                 ex_set.img_refs.flush()
                 ex_set.input.flush()
                 ex_set.output.flush()

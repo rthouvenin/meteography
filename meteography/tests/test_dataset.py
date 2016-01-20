@@ -210,7 +210,7 @@ class TestDataSet:
         "The list of data points should have the expected dimensions"
         interval, pred_time = 60, 120
         intervals = [60] * 4 + [pred_time]
-        data_points = dataset._find_examples(intervals)
+        data_points = list(dataset._find_examples(intervals))
         # (max - future_time - (hist_len - 1)*interval - min) / step + 1
         # = (12000 - 120 - 4*60 - 6000) / 60 = 94
         assert(len(data_points) == 94)
@@ -222,7 +222,7 @@ class TestDataSet:
 
     def test_findexamples_empty(self, emptydataset):
         "An empty imageset should not be a problem"
-        data_points = emptydataset._find_examples([6, 6, 6])
+        data_points = list(emptydataset._find_examples([6, 6, 6]))
         assert(len(data_points) == 0)
 
     def test_makeset_empty(self, emptydataset):
@@ -257,17 +257,6 @@ class TestDataSet:
         assert(len(dataset.input_data) == prev_nb_ex + 1)
         assert(len(dataset.output_data) == prev_nb_ex + 1)
 
-    def test_add_afterreduced(self, dataset, imgfile):
-        """Adding an image to a dataset after the imageset was reduced should
-        not be a problem"""
-        prev_length = len(dataset.imgset)
-        prev_nb_ex = len(dataset.input_data)
-        dataset.imgset.reduce_dim()
-        dataset.add_image(imgfile, 'test')
-        assert(len(dataset.imgset) == prev_length + 1)
-        assert(len(dataset.input_data) == prev_nb_ex + 1)
-        assert(len(dataset.output_data) == prev_nb_ex + 1)
-
     def test_reducedim(self, dataset):
         testset = dataset.fileh.root.examples.test
         prev_refs_shape = testset.img_refs.shape
@@ -279,6 +268,18 @@ class TestDataSet:
         assert(len(testset.output) == prev_refs_shape[0])
         assert(testset.input.shape[1] < prev_nb_feat)
         assert(testset.output.shape[1] < prev_imgdim)
+
+    def test_add_afterreduced(self, dataset, imgfile):
+        """Adding an image to a dataset after it was reduced should
+        not be a problem"""
+        prev_length = len(dataset.imgset)
+        prev_nb_ex = len(dataset.input_data)
+        dataset.reduce_dim()
+        dataset.add_image(imgfile, 'test')
+        assert(len(dataset.imgset) == prev_length + 1)
+        testset = dataset.fileh.root.examples.test
+        assert(len(testset.input) == prev_nb_ex + 1)
+        assert(len(testset.output) == prev_nb_ex + 1)
 
     def test_split_default(self, dataset):
         "default = 70% (66.5) training, 15% (14.25) validation, 15% test"

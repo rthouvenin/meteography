@@ -937,6 +937,10 @@ class DataSet:
         necessary to re-create the entire file if one wants to reclaim the
         space, which is of course an expensive operation on large files.
 
+        You may want to call repack after these operations:
+         - delete_set
+         - reduce_dim
+
         Notes
         -----
          - If the DataSet was opened or created from a file pointer, this

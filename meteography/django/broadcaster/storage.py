@@ -84,6 +84,7 @@ class WebcamStorage:
         try:
             with self.get_dataset(webcam_id) as dataset:
                 dataset.reduce_dim()
+                dataset.repack()
         except Exception:
             logger.exception("Error while reducing webcam %s", webcam_id)
         else:
@@ -153,6 +154,7 @@ class WebcamStorage:
             shutil.rmtree(pred_path)
             with self.get_dataset(cam_id) as dataset:
                 dataset.delete_set(params.name)
+                dataset.repack()
         except Exception:
             logger.exception("Error while deleting set %s", params.name)
         else:

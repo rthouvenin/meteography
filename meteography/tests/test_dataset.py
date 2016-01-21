@@ -291,6 +291,14 @@ class TestDataSet:
         assert(len(testset.input) == prev_nb_ex + 1)
         assert(len(testset.output) == prev_nb_ex + 1)
 
+    def test_repack(self, dataset):
+        "Repacking should reclaim the space of a deleted set"
+        prev_size = dataset.fileh.get_filesize()
+        dataset.delete_set('test')
+        dataset.repack()
+        new_size = dataset.fileh.get_filesize()
+        assert(new_size < prev_size)
+
     def test_split_default(self, dataset):
         "default = 70% (66.5) training, 15% (14.25) validation, 15% test"
         dataset.split()

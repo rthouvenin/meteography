@@ -10,6 +10,7 @@ import logging
 import os.path
 import pickle
 import random
+import shutil
 import time
 
 import numpy as np
@@ -513,10 +514,13 @@ class DataSet:
         imageset : ImageSet
             The ImageSet containing all the source images.
         """
+        self._reset(fileh, imageset)
+        self.is_split = False  # FIXME remove this
+
+    def _reset(self, fileh, imageset):
         self.fileh = fileh
         self.imgset = imageset
         self.img_shape = imageset.img_shape
-        self.is_split = False
 
     @property
     def is_reduced(self):
@@ -893,13 +897,12 @@ class DataSet:
         Re-create the input and output arrays of `ex_set`.
         """
         nb_ex = ex_set.img_refs._v_expectedrows
-        oldinput = ex_set.input
         hist_len = len(ex_set._v_attrs.intervals)
         self._create_set_arrays(ex_set, None, 'newinput', 'newoutput', nb_ex)
         for refs_row in ex_set.img_refs:
             pixels_row = self.imgset.get_pixels_at(refs_row)
             newfeatures = pixels_row[:-1].flatten()
-            oldfeatures = oldinput[ex_set.img_refs.nrow, -hist_len:]
+            oldfeatures = ex_set.input[ex_set.img_refs.nrow, -hist_len:]
             ex_set.newinput.append([np.hstack([newfeatures, oldfeatures])])
             ex_set.newoutput.append([pixels_row[-1]])
         ex_set.input.remove()
@@ -926,6 +929,36 @@ class DataSet:
         img_ref = ex_set.img_refs[i][-1]
         raw_data = self.imgset.get_pixels_at(img_ref, False)
         return raw_data.reshape(self.img_shape)
+
+    def repack(self):
+        """
+        Recreate the HDF5 backing this dataset and underlying imageset.
+        As HDF5 does not free the space after removing nodes from a file, it is
+        necessary to re-create the entire file if one wants to reclaim the
+        space, which is of course an expensive operation on large files.
+
+        Notes
+        -----
+         - If the DataSet was opened or created from a file pointer, this
+        pointer will be closed and should not be used after the repack call
+         - This will repack the entire file, including the ImageSet data and
+        any other data that may be there from other sources.
+        """
+        # Copy the file over itself
+        old_name = self.fileh.filename
+        temp_name = old_name + '.temp'
+        self.fileh.copy_file(temp_name)
+        self.fileh.close()
+        shutil.move(temp_name, old_name)
+
+        # Re-initialize the file pointer and the ImageSet instance
+        if self.imgset.fileh is self.fileh:
+            new_imgset = ImageSet.open(old_name)
+            new_fileh = new_imgset.fileh
+        else:
+            new_imgset = self.imgset
+            new_fileh = tables.open_file(old_name, mode='a')
+        self._reset(new_fileh, new_imgset)
 
     def split(self, train=.7, valid=.15, shuffle=False):
         """

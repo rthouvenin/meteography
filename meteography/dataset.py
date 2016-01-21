@@ -381,7 +381,7 @@ class ImageSet:
             sample = self.get_pixels_at(index, False)
         return sample
 
-    def reduce_dim(self, sample_size=1000, n_components=None):
+    def reduce_dim(self, sample_size=1000, n_dims=.99):
         """
         Apply PCA transformation to each image of the set.
 
@@ -406,7 +406,7 @@ class ImageSet:
 
         # Compute PCA components from the sample.
         #FIXME: choose an algo
-        self.pca = PCA(n_components=n_components).fit(sample)
+        self.pca = PCA(n_components=n_dims).fit(sample)
         ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
 
         # Store the reduction matrix

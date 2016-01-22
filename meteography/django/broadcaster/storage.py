@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
+from numbers import Number
 import os.path
 import shutil
 
@@ -48,6 +49,30 @@ class WebcamStorage:
         """
         img_dir = os.path.join(self.PREDICTION_DIR, params_name)
         return self._image_path(webcam_id, img_dir, timestamp)
+
+    def get_pixels(self, img, webcam_id):
+        """
+        Return the pixels data of an image, as given by
+        `ImageSet.pixels_from_file()`.
+
+        Parameters
+        ----------
+        img : int or str
+            If a number, it is assumed to be a timestamp of when the picture
+            was taken by the webcam. It will be read from the images set.
+            If a string, it is assumed to be a path, it will be read from the
+            file at this path.
+        webcam_id : str
+            The id of the webcam that took the picture
+        """
+        with self.get_dataset(webcam_id) as dataset:
+            if isinstance(img, Number):
+                img_dict = dataset.imgset.get_image(img, False)
+                return img_dict['pixels']
+            else:
+                if not os.path.isabs(img):
+                    img = self.fs.path(img)
+                return dataset.imgset.pixels_from_file(img)
 
     def add_webcam(self, webcam_id):
         """
@@ -120,7 +145,7 @@ class WebcamStorage:
         # store the image in dataset
         with self.get_dataset(webcam.webcam_id) as dataset:
             # FIXME give directly PIL reference
-            dataset.add_image(self.fs.path(filepath))
+            return dataset.add_image(self.fs.path(filepath))
 
     def add_examples_set(self, params):
         """

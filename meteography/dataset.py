@@ -183,7 +183,7 @@ class ImageSet:
         'pixels' will contain the PCA-transformed data.
         """
         if not ret_reduced and self.is_reduced:
-            pixels = self._data_from_file(row['name'])
+            pixels = self.pixels_from_file(row['name'])
         else:
             pixels = row['pixels']
         img = self._img_dict(row['name'], row['time'], pixels, row.nrow)
@@ -207,7 +207,7 @@ class ImageSet:
 
     def _realpixels(self, idx):
         rows = self.table.itersequence(idx)
-        return np.array([self._data_from_file(r['name']) for r in rows])
+        return np.array([self.pixels_from_file(r['name']) for r in rows])
 
     def get_pixels_at(self, idx, ret_reduced=True):
         """
@@ -270,7 +270,18 @@ class ImageSet:
 
         return self._img_dict(name, img_time, ret_pixels, img_id)
 
-    def _data_from_file(self, imgfile):
+    def pixels_from_file(self, imgfile):
+        """
+        Extract the data from an image file located at `imgfile`.
+
+        Return
+        ------
+        A one-dimension numpy array of floats (c.f. PIXEL_TYPE) in [0, 1].
+        If the set is working with grey-scale images, the size of the returned
+        array is the number of pixels, otherwise 3 times as much. The elements
+        are ordered band by band and line by line:
+            [r(0,0), g(0,0), b(0,0), r(0,1), g(0,1), b(0,1), ...]
+        """
         with open(imgfile, 'rb') as fp:
             img = PIL.Image.open(fp)
             img_shape = img.size[1], img.size[0]
@@ -295,7 +306,7 @@ class ImageSet:
         """
         `add_from_file` without flushing the table.
         """
-        data = self._data_from_file(imgfile)
+        data = self.pixels_from_file(imgfile)
         img_time = name_parser(imgfile)
         return self._add_image(imgfile, img_time, data, ret_reduced)
 

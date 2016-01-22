@@ -1,5 +1,6 @@
 import os.path
 import threading
+import time
 
 import matplotlib.pylab as plt
 
@@ -78,13 +79,23 @@ class Webcam(models.Model):
 
 
 class Picture:
-    def __init__(self, webcam, timestamp, fp):
+    "Model of a picture taken by a webcam"
+    def __init__(self, webcam, timestamp, filep):
         self.webcam = webcam
-        self.timestamp = timestamp
-        self.fp = fp
+        self.timestamp = int(timestamp)
+        self.filep = filep
+        self._pixels = None
+
+    @property
+    def pixels(self):
+        if self._pixels is None:
+            self._pixels = webcam_fs.get_pixels(self.filep,
+                                                self.webcam.webcam_id)
+        return self._pixels
 
     def save(self):
-        webcam_fs.add_picture(self.webcam, self.timestamp, self.fp)
+        img = webcam_fs.add_picture(self.webcam, self.timestamp, self.filep)
+        self._pixels = img['pixels']
 
 
 class PredictionParams(models.Model):
@@ -121,7 +132,8 @@ class PredictionParams(models.Model):
 class Prediction(models.Model):
     params = models.ForeignKey(PredictionParams)
     comp_date = models.DateTimeField('computation date')
-    path = models.CharField(max_length=100)
+    path = models.CharField(max_length=100)  # FIXME use FileField ?
+    error = models.FloatField(null=True)
 
     class Meta:
         get_latest_by = 'comp_date'
@@ -132,10 +144,17 @@ class Prediction(models.Model):
     def minutes_target(self):
         return (self.params.intervals[-1] // 60)
 
-    def save(self, *args, **kwargs):
+    def create(self, *args, **kwargs):
         with webcam_fs.fs.open(self.path, 'w') as fp:
             plt.imsave(fp, self.sci_bytes)
-        super(Prediction, self).save(*args, **kwargs)
+        self.save(*args, **kwargs)
+
+    def as_picture(self):
+        "Picture representation of the prediction"
+        cam = self.params.webcam
+        timestamp = time.mktime(self.comp_date.timetuple())
+        pic = Picture(cam, timestamp, self.path)
+        return pic
 
 
 @receiver(post_delete, sender=PredictionParams)

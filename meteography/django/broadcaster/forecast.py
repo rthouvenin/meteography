@@ -4,6 +4,7 @@ from datetime import datetime
 
 from django.utils.timezone import utc
 
+from meteography import analysis
 from meteography.neighbors import NearestNeighbors
 from meteography.django.broadcaster.models import Prediction
 from meteography.django.broadcaster.storage import webcam_fs
@@ -22,8 +23,30 @@ def make_prediction(webcam, params, timestamp):
             output = dataset.output_img(onlineset, output_ref)
             # FIXME reference existing image (data and file)
             imgpath = webcam_fs.prediction_path(cam_id, params.name, timestamp)
-            result = Prediction(params=params)
+            result = Prediction(params=params, path=imgpath)
             result.comp_date = datetime.fromtimestamp(float(timestamp), utc)
             result.sci_bytes = output
-            result.path = imgpath
+            result.create()
     return result
+
+
+def update_prediction(prediction, real_pic):
+    """
+    Update a prediction after receiving the actual picture from the webcam.
+
+    Parameters
+    ----------
+    prediction : Prediction
+        The model object of the prediction to update
+    real_pic : Picture
+        The model object of the actual picture received
+
+    Return
+    ------
+    float: the prediction error
+    """
+    pred_pic = prediction.as_picture()
+    error = analysis.compute_error(pred_pic.pixels, real_pic.pixels)
+    prediction.error = error
+    prediction.save()
+    return error

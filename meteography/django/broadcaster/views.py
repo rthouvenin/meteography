@@ -1,14 +1,16 @@
 import io
 import os.path
+from datetime import datetime
 
-from django.views.static import serve as serve_file
 from django.http import HttpResponse, HttpResponseNotFound
 from django.shortcuts import render
+from django.utils.timezone import utc
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.views.static import serve as serve_file
 
 from meteography.django.broadcaster import forecast
-from meteography.django.broadcaster.models import Webcam, Picture
+from meteography.django.broadcaster.models import Webcam, Picture, Prediction
 from meteography.django.broadcaster.settings import WEBCAM_ROOT
 
 
@@ -38,8 +40,15 @@ def picture(request, webcam_id, timestamp):
     params_list = webcam.predictionparams_set.all()
     for params in params_list:
         prediction = forecast.make_prediction(webcam, params, timestamp)
-        if prediction:
-            prediction.save()
+
+        # Check if there was any prediction targetting this timestamp,
+        # and if yes compute the error
+        pred_target = params.intervals[-1]
+        comp_timestamp = int(timestamp) - pred_target
+        comp_date = datetime.fromtimestamp(float(comp_timestamp), utc)
+        old_predictions = Prediction.objects.filter(comp_date=comp_date)
+        for prediction in old_predictions:
+            forecast.update_prediction(prediction, pic)
 
     return HttpResponse(status=204)
 

@@ -252,9 +252,9 @@ class ImageSet:
         ret_pixels = pixels
 
         if self.is_reduced:
-            row_pixels = self.pca.transform([pixels])
+            row_pixels = self.pca.transform([pixels])[0]
             if ret_reduced:
-                ret_pixels = row_pixels[0]
+                ret_pixels = row_pixels
 
         row = self.table.row
         row['name'] = name

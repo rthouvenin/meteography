@@ -36,7 +36,7 @@ def imgset_fixture(request, tmpdir_factory, fname, images):
 @pytest.fixture(scope='session')
 def imgfile(tmpdir_factory, t=12000):
     filename = tmpdir_factory.mktemp('img').join('%d.jpg' % t).strpath
-    pixels = np.zeros((IMG_SIZE, IMG_SIZE))
+    pixels = np.random.randint(0, 255, (IMG_SIZE, IMG_SIZE))
     img = Image.fromarray(pixels, mode='L')
     img.save(filename)
     return filename
@@ -168,7 +168,7 @@ class TestImageSet:
         "More images than sample size"
         prev_length = len(bigimageset)
         sample_size = prev_length / 2
-        bigimageset.reduce_dim(sample_size)
+        bigimageset.reduce_dim(sample_size, None)
         img0 = next(iter(bigimageset))
         assert(len(bigimageset) == prev_length)
         assert(bigimageset.pca is not None)
@@ -185,7 +185,7 @@ class TestImageSet:
             filedimageset._add_image(**img)
         filedimageset.fileh.flush()
         prev_length = len(filedimageset)
-        filedimageset.reduce_dim(450)
+        filedimageset.reduce_dim(450, None)
         img0 = next(iter(filedimageset))
         assert(len(filedimageset) == prev_length)
         assert(len(img0['pixels']) == IMG_SIZE*IMG_SIZE)

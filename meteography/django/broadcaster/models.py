@@ -55,6 +55,9 @@ class Webcam(models.Model):
     name = models.CharField(max_length=32)
     compressed = models.BooleanField(default=False)
 
+    def pred_params_list(self):
+        return PredictionParams.objects.filter(webcam=self)
+
     def latest_prediction(self):
         predictions = Prediction.objects.filter(params__webcam=self)
         if predictions:
@@ -103,6 +106,14 @@ class PredictionParams(models.Model):
     name = models.SlugField(max_length=16)
     intervals = CommaSeparatedIntegerField(max_length=128)
 
+    def latest_prediction(self):
+        predictions = Prediction.objects.filter(params=self)
+        if predictions:
+            latest = predictions.latest()
+        else:
+            latest = None
+        return latest
+
     def save(self, *args, **kwargs):
         """
         Create a set of examples in DB and in the dataset of the cam.
@@ -139,7 +150,7 @@ class Prediction(models.Model):
         get_latest_by = 'comp_date'
 
     def url(self):
-        return os.path.join(WEBCAM_URL, self.path)
+        return os.path.join('/', WEBCAM_URL, self.path)
 
     def minutes_target(self):
         return (self.params.intervals[-1] // 60)

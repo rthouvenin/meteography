@@ -1,36 +1,35 @@
+{% extends "broadcaster/base.html" %}
 {% load staticfiles %}
-<!DOCTYPE html>
-<html>
-<head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-  <title>Meteography</title>
-  <link rel="stylesheet" href="{% static 'broadcaster/style.css' %}"/>
-</head>
-<body>
+
+{% block title %}Meteography{% endblock %}
+
+{% block body %}
   <h1>Meteography</h1>
   <p>This is a meteographer</p>
   <section>
     <h2>List of cameras</h2>
     {% if webcams %}
-    <ul class="camlist">
+    <ul class="pred-recap">
       {% for webcam in webcams %}
         <li>
-          {% if webcam.latest_prediction %}
-            <img src="{{ webcam.latest_prediction.url }}"
-               class="thumbnail" alt="Latest {{ webcam.name }} prediction" />
-          {% else %}
-            <img src="{% static 'broadcaster/img/noprediction.png' %}"
-               class="thumbnail" alt="No prediction available" />
-          {% endif %}
-          <div>
-            <header>{{ webcam.name }}</header>
+          <a href="{% url 'webcam' webcam.webcam_id %}">
             {% if webcam.latest_prediction %}
-              <p>
-                Latest prediction done on {{webcam.latest_prediction.comp_date}}
-                for {{webcam.latest_prediction.minutes_target}} min later
-              </p>
+              <img src="{{ webcam.latest_prediction.url }}"
+                   class="thumbnail" alt="Latest {{ webcam.name }} prediction" />
+            {% else %}
+              <img src="{% static 'broadcaster/img/noprediction.png' %}"
+                   class="thumbnail" alt="No prediction available" />
             {% endif %}
-          </div>
+            <div>
+              <header>{{ webcam.name }}</header>
+              {% if webcam.latest_prediction %}
+                <p>
+                  Latest prediction done on {{webcam.latest_prediction.comp_date}}
+                  for {{webcam.latest_prediction.minutes_target}} min later
+                </p>
+              {% endif %}
+            </div>
+          </a>
         </li>
       {% endfor %}
     </ul>
@@ -38,6 +37,5 @@
       <p>No webcam available.</p>
     {% endif %}
   </section>
-</body>
-</html>
+{% endblock %}
 

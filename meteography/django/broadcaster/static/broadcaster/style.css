@@ -1,21 +1,21 @@
-.camlist {
+.pred-recap {
   list-style: none;
 }
 
-.camlist li {
+.pred-recap li {
   padding: 10px;
 }
-.camlist li:nth-child(odd) {
+.pred-recap li:nth-child(odd) {
   background-color: paleturquoise;
 }
-.camlist li:nth-child(even) {
+.pred-recap li:nth-child(even) {
   background-color: cadetblue;
 }
-.camlist .thumbnail {
+.pred-recap .thumbnail {
   vertical-align: middle;
 }
 
-.camlist div {
+.pred-recap div {
   display: inline-block;
   vertical-align: middle;
 }

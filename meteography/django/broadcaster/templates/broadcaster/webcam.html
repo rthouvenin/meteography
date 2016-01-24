@@ -1,0 +1,38 @@
+{% extends "broadcaster/base.html" %}
+{% load staticfiles %}
+
+{% block title %}{{ webcam.name }} meteography{% endblock %}
+
+{% block body %}
+  <h1>{{ webcam.name }} meteography</h1>
+  <section>
+    <h2>List of prediction configurations</h2>
+    {% if webcam.pred_params_list %}
+    <ul class="pred-recap">
+      {% for params in webcam.pred_params_list %}
+        <li>
+          {% if params.latest_prediction %}
+            <img src="{{ params.latest_prediction.url }}"
+                 class="thumbnail" alt="Latest {{ params.name }} prediction" />
+          {% else %}
+            <img src="{% static 'broadcaster/img/noprediction.png' %}"
+                 class="thumbnail" alt="No prediction available" />
+          {% endif %}
+          <div>
+            <header>{{ params.name }}</header>
+            {% if params.latest_prediction %}
+              <p>
+                Latest prediction done on {{params.latest_prediction.comp_date}}
+                for {{params.latest_prediction.minutes_target}} min later
+              </p>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      <p>No prediction configuration available.</p>
+    {% endif %}
+  </section>
+{% endblock %}
+

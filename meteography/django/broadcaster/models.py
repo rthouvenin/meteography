@@ -1,3 +1,4 @@
+from datetime import timedelta
 import os.path
 import threading
 import time
@@ -106,6 +107,16 @@ class PredictionParams(models.Model):
         predictions = self.prediction_set
         return predictions.latest() if predictions else None
 
+    def history(self, length=5, with_error=True):
+        history_set = self.prediction_set.order_by('-comp_date')
+
+        if with_error is True:
+            history_set = history_set.exclude(error=None)
+        elif with_error is False:
+            history_set = history_set.filter(error=None)
+
+        return history_set[:length]
+
     def save(self, *args, **kwargs):
         """
         Create a set of examples in DB and in the dataset of the cam.
@@ -146,6 +157,14 @@ class Prediction(models.Model):
 
     def minutes_target(self):
         return (self.params.intervals[-1] // 60)
+
+    def actual(self):
+        target_delta = timedelta(seconds=self.params.intervals[-1])
+        target_date = self.comp_date + target_delta
+        target_timestamp = int(time.mktime(target_date.timetuple()))
+        cam_id = self.params.webcam.webcam_id
+        rel_path = webcam_fs.picture_path(cam_id, target_timestamp)
+        return os.path.join('/', WEBCAM_URL, rel_path)
 
     def create(self, *args, **kwargs):
         with webcam_fs.fs.open(self.path, 'w') as fp:

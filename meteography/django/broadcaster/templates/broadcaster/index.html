@@ -9,7 +9,7 @@
   <section>
     <h2>List of cameras</h2>
     {% if webcams %}
-      <ul class="pred-recap">
+      <ul class="pred-recap alternated">
         {% for webcam in webcams %}
           <li>
             <a href="{% url 'webcam' webcam.webcam_id %}">

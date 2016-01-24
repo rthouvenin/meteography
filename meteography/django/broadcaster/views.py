@@ -61,6 +61,6 @@ def picture(request, webcam_id, timestamp):
     return HttpResponse(status=204)
 
 
-def prediction(request, webcam_id, path):
+def static_pic(request, webcam_id, path):
     # FIXME make production-ready
     return serve_file(request, os.path.join(webcam_id, path), WEBCAM_ROOT)

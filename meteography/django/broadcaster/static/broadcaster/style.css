@@ -5,10 +5,10 @@
 .pred-recap li {
   padding: 10px;
 }
-.pred-recap li:nth-child(odd) {
+.pred-recap.alternated > li:nth-child(odd) {
   background-color: paleturquoise;
 }
-.pred-recap li:nth-child(even) {
+.pred-recap.alternated > li:nth-child(even) {
   background-color: cadetblue;
 }
 .pred-recap .thumbnail {
@@ -18,4 +18,12 @@
 .pred-recap div {
   display: inline-block;
   vertical-align: middle;
+}
+
+.pred-history {
+  margin-left: 30px;
+  border: 1px solid;
+}
+.pred-history td {
+  padding: 5px;
 }

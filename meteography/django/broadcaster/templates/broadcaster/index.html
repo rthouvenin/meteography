@@ -1,5 +1,5 @@
 {% extends "broadcaster/base.html" %}
-{% load staticfiles %}
+{% load broadcastertags %}
 
 {% block title %}Meteography{% endblock %}
 
@@ -9,30 +9,15 @@
   <section>
     <h2>List of cameras</h2>
     {% if webcams %}
-    <ul class="pred-recap">
-      {% for webcam in webcams %}
-        <li>
-          <a href="{% url 'webcam' webcam.webcam_id %}">
-            {% if webcam.latest_prediction %}
-              <img src="{{ webcam.latest_prediction.url }}"
-                   class="thumbnail" alt="Latest {{ webcam.name }} prediction" />
-            {% else %}
-              <img src="{% static 'broadcaster/img/noprediction.png' %}"
-                   class="thumbnail" alt="No prediction available" />
-            {% endif %}
-            <div>
-              <header>{{ webcam.name }}</header>
-              {% if webcam.latest_prediction %}
-                <p>
-                  Latest prediction done on {{webcam.latest_prediction.comp_date}}
-                  for {{webcam.latest_prediction.minutes_target}} min later
-                </p>
-              {% endif %}
-            </div>
-          </a>
-        </li>
-      {% endfor %}
-    </ul>
+      <ul class="pred-recap">
+        {% for webcam in webcams %}
+          <li>
+            <a href="{% url 'webcam' webcam.webcam_id %}">
+              {% latest_prediction webcam %}
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
     {% else %}
       <p>No webcam available.</p>
     {% endif %}

@@ -60,11 +60,7 @@ class Webcam(models.Model):
 
     def latest_prediction(self):
         predictions = Prediction.objects.filter(params__webcam=self)
-        if predictions:
-            latest = predictions.latest()
-        else:
-            latest = None
-        return latest
+        return predictions.latest() if predictions else None
 
     def store(self):
         webcam_fs.add_webcam(self.webcam_id)
@@ -107,12 +103,8 @@ class PredictionParams(models.Model):
     intervals = CommaSeparatedIntegerField(max_length=128)
 
     def latest_prediction(self):
-        predictions = Prediction.objects.filter(params=self)
-        if predictions:
-            latest = predictions.latest()
-        else:
-            latest = None
-        return latest
+        predictions = self.prediction_set
+        return predictions.latest() if predictions else None
 
     def save(self, *args, **kwargs):
         """

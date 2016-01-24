@@ -1,0 +1,18 @@
+{% load staticfiles %}
+
+{% if latest_prediction %}
+  <img src="{{ latest_prediction.url }}"
+       class="thumbnail" alt="Latest {{ name }} prediction" />
+{% else %}
+  <img src="{% static 'broadcaster/img/noprediction.png' %}"
+       class="thumbnail" alt="No prediction available" />
+{% endif %}
+<div>
+  <header>{{ name }}</header>
+  {% if latest_prediction %}
+    <p>
+      Latest prediction done on {{latest_prediction.comp_date}}
+      for {{latest_prediction.minutes_target}} min later
+    </p>
+  {% endif %}
+</div>

@@ -196,10 +196,11 @@ class ImageSet:
         will contain the PCA-transformed data.
         """
         rows = self.table.where('time == t')
-        row = next(rows, None)
-        if row:
+        try:
+            row = next(rows)
             return self._img_from_row(row, ret_reduced)
-        return None
+        except StopIteration:
+            raise ValueError("Image with time=%d does not exist" % t)
 
     def _pcapixels(self, idx):
         rows = self.table.itersequence(idx)
@@ -784,8 +785,6 @@ class DataSet:
             target (expected prediction) of the example
         """
         img = self._dictify(img)
-        if img is None:
-            return None
         #Search for input images that match the target
         images = self._find_sequence(img, intervals)
 
@@ -834,8 +833,6 @@ class DataSet:
         array : the feature vector
         """
         img = self._dictify(fuzzy_img)
-        if img is None:  # FIXME Move to get_image
-            raise ValueError("Image with time=%d does not exist" % fuzzy_img)
         ex_set = self._nodify(ex_set)
         intervals = ex_set._v_attrs.intervals[:-1]
         if target_time is None:

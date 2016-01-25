@@ -7,6 +7,8 @@ pytables arrays (or other disk-backed arrays that support slicing)
 import numpy as np
 from sklearn.neighbors import NearestNeighbors as SKNN
 
+from meteography.dataset import PIXEL_TYPE
+
 
 class NearestNeighbors:
     BATCH_SIZE = 20 * 1024 * 1024
@@ -33,7 +35,7 @@ class NearestNeighbors:
         incr = (self.nb_batch > 1)
         if self.batch is None or oldincr != incr:
             self.batch = np.empty((self.batch_len+incr, self.X.shape[1]),
-                                  np.float32)  # FIXME do not hardcode
+                                  dtype=PIXEL_TYPE)
         return self.nb_batch
 
     def _get_batch(self, b, extra_row):

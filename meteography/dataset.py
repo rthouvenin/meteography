@@ -526,7 +526,6 @@ class DataSet:
             The ImageSet containing all the source images.
         """
         self._reset(fileh, imageset)
-        self.is_split = False  # FIXME remove this
 
     def _reset(self, fileh, imageset):
         self.fileh = fileh
@@ -726,8 +725,6 @@ class DataSet:
         img_refs.flush()
         input_data.flush()
         output_data.flush()
-        self.input_data = input_data  # FIXME don't store this in attributes
-        self.output_data = output_data
         self.history_len = hist_len
         return newset
 
@@ -928,7 +925,7 @@ class DataSet:
         """
         ex_set = self._nodify(ex_set)
         imgdim = ex_set.output.shape[1]
-        img = self.input_data[i, j*imgdim:(j+1)*imgdim]
+        img = ex_set.input[i, j*imgdim:(j+1)*imgdim]
         return img.reshape(self.img_shape)
 
     def output_img(self, ex_set, i):
@@ -974,60 +971,3 @@ class DataSet:
             new_imgset = self.imgset
             new_fileh = tables.open_file(old_name, mode='a')
         self._reset(new_fileh, new_imgset)
-
-    def split(self, train=.7, valid=.15, shuffle=False):
-        """
-        Split the examples into a training set, validation set and test set.
-        The data is shuffled before the split, and the original order is lost.
-        The method can be called multiple times to apply multiple shuffles and
-        obtain different training/validation/test splits.
-        The examples allocated to the test set are the remaining ones after
-        creating the training and validation sets
-
-        Parameters
-        ----------
-        train : float in [0, 1]
-            The proportion of examples to allocate to the training set
-        valid : float in [0, 1], with `train` + `valid` <= 1
-            The proportion of examples to allocate to the validation set
-        """
-        assert 0 <= (train + valid) <= 1
-        full_size = len(self.input_data)
-#        if shuffle:  # need extra work for large datasets
-#            indexes = range(full_size)
-#            np.random.shuffle(indexes)
-#            self.input_data = self.input_data[indexes]
-#            self.output_data = self.output_data[indexes]
-        train_size = int(full_size * train)
-        valid_size = int(full_size * valid)
-        self.__dispatch_data(train_size, valid_size)
-        self.is_split = train_size, valid_size
-
-    def __dispatch_data(self, train_size, valid_size, dispatch_output=True):
-        #These are views, not copies
-        endvalid = train_size + valid_size
-        self.train_input = self.input_data[:train_size]
-        self.valid_input = self.input_data[train_size:endvalid]
-        self.test_input = self.input_data[train_size+valid_size:]
-        if dispatch_output:
-            self.train_output = self.output_data[:train_size]
-            self.valid_output = self.output_data[train_size:endvalid]
-            self.test_output = self.output_data[train_size+valid_size:]
-
-    def training_set(self):
-        "Return the tuple input, output of the training set"
-        if self.is_split:
-            return self.train_input, self.train_output
-        return self.input_data, self.output_data
-
-    def validation_set(self):
-        "Return the tuple input, output of the validation set"
-        if self.is_split:
-            return self.valid_input, self.valid_output
-        return [], []
-
-    def test_set(self):
-        "Return the tuple input, output of the test set"
-        if self.is_split:
-            return self.test_input, self.test_output
-        return [], []

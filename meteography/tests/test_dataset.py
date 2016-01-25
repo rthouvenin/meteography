@@ -261,11 +261,12 @@ class TestDataSet:
     def test_add_newexample(self, dataset, imgfile):
         "Adding an image to a compatible dataset should create a new example"
         prev_length = len(dataset.imgset)
-        prev_nb_ex = len(dataset.input_data)
+        testset = dataset.fileh.root.examples.test
+        prev_nb_ex = len(testset.input)
         dataset.add_image(imgfile, 'test')
         assert(len(dataset.imgset) == prev_length + 1)
-        assert(len(dataset.input_data) == prev_nb_ex + 1)
-        assert(len(dataset.output_data) == prev_nb_ex + 1)
+        assert(len(testset.input) == prev_nb_ex + 1)
+        assert(len(testset.output) == prev_nb_ex + 1)
 
     def test_reducedim(self, dataset):
         testset = dataset.fileh.root.examples.test
@@ -283,11 +284,11 @@ class TestDataSet:
         """Adding an image to a dataset after it was reduced should
         not be a problem"""
         prev_length = len(dataset.imgset)
-        prev_nb_ex = len(dataset.input_data)
+        testset = dataset.fileh.root.examples.test
+        prev_nb_ex = len(testset.input)
         dataset.reduce_dim()
         dataset.add_image(imgfile, 'test')
         assert(len(dataset.imgset) == prev_length + 1)
-        testset = dataset.fileh.root.examples.test
         assert(len(testset.input) == prev_nb_ex + 1)
         assert(len(testset.output) == prev_nb_ex + 1)
 
@@ -298,17 +299,6 @@ class TestDataSet:
         dataset.repack()
         new_size = dataset.fileh.get_filesize()
         assert(new_size < prev_size)
-
-    def test_split_default(self, dataset):
-        "default = 70% (66.5) training, 15% (14.25) validation, 15% test"
-        dataset.split()
-        self.check_length(dataset, 65, 14, 15)
-
-    def test_split_80_20(self, dataset):
-        "80% (76) training, 20% (19) validation, 0 test"
-        assert(len(dataset.input_data) == 94)
-        dataset.split(.8, .2)
-        self.check_length(dataset, 75, 18, 1)
 
     def test_getoutput(self, dataset):
         pixels = dataset.output_img('test', 0)

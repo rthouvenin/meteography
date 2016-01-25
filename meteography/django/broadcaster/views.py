@@ -2,6 +2,10 @@ import io
 import os.path
 from datetime import datetime
 
+import matplotlib
+matplotlib.use('Agg')  # FIXME put somewhere more appropriate
+import matplotlib.pyplot as plt
+
 from django.http import HttpResponse, HttpResponseNotFound
 from django.shortcuts import get_object_or_404, render
 from django.utils.timezone import utc
@@ -10,7 +14,8 @@ from django.views.decorators.http import require_http_methods
 from django.views.static import serve as serve_file
 
 from meteography.django.broadcaster import forecast
-from meteography.django.broadcaster.models import Webcam, Picture, Prediction
+from meteography.django.broadcaster.models import (
+    Webcam, Picture, Prediction, PredictionParams)
 from meteography.django.broadcaster.settings import WEBCAM_ROOT
 
 
@@ -59,6 +64,20 @@ def picture(request, webcam_id, timestamp):
             forecast.update_prediction(prediction, pic)
 
     return HttpResponse(status=204)
+
+
+def error_graph(request, webcam_id, pname):
+    pred_params = get_object_or_404(PredictionParams,
+                                    webcam_id=webcam_id, name=pname)
+
+    errors = pred_params.error_list()
+    plt.plot(errors)
+    img_bytes = io.BytesIO()
+    plt.savefig(img_bytes, format='png')
+    plt.close()
+    response = HttpResponse(content_type='image/png')
+    response.write(img_bytes.getvalue())
+    return response
 
 
 def static_pic(request, webcam_id, path):

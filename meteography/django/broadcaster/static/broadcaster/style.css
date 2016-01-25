@@ -23,7 +23,13 @@
 .pred-history {
   margin-left: 30px;
   border: 1px solid;
+  float: left;
 }
 .pred-history td {
   padding: 5px;
+}
+
+.errgraph {
+  width: 500px;
+  margin: 2px 10px;
 }

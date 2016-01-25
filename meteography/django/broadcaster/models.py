@@ -3,6 +3,8 @@ import os.path
 import threading
 import time
 
+import matplotlib
+matplotlib.use('Agg')  # FIXME put somewhere more appropriate
 import matplotlib.pylab as plt
 
 from django.db import models
@@ -116,6 +118,12 @@ class PredictionParams(models.Model):
             history_set = history_set.filter(error=None)
 
         return history_set[:length]
+
+    def error_list(self):
+        predictions = self.prediction_set.order_by('comp_date')
+        predictions = predictions.exclude(error=None)
+        errors = predictions.values_list('error', flat=True)
+        return errors
 
     def save(self, *args, **kwargs):
         """

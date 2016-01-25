@@ -6,17 +6,16 @@ import matplotlib
 matplotlib.use('Agg')  # FIXME put somewhere more appropriate
 import matplotlib.pyplot as plt
 
-from django.http import HttpResponse, HttpResponseNotFound, HttpResponseForbidden
+from django.http import (
+    HttpResponse, HttpResponseNotFound, HttpResponseForbidden)
 from django.shortcuts import get_object_or_404, render
 from django.utils.timezone import utc
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from django.views.static import serve as serve_file
 
 from meteography.django.broadcaster import forecast
 from meteography.django.broadcaster.models import (
     Webcam, Picture, Prediction, PredictionParams)
-from meteography.django.broadcaster.settings import WEBCAM_ROOT
 
 
 def index(request):
@@ -86,8 +85,3 @@ def error_graph(request, webcam_id, pname):
     response = HttpResponse(content_type='image/png')
     response.write(img_bytes.getvalue())
     return response
-
-
-def static_pic(request, webcam_id, path):
-    # FIXME make production-ready
-    return serve_file(request, os.path.join(webcam_id, path), WEBCAM_ROOT)

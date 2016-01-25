@@ -1,5 +1,4 @@
 from datetime import timedelta
-import os.path
 import threading
 import time
 
@@ -12,7 +11,7 @@ from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.forms import CharField as CharFormField
 
-from meteography.django.broadcaster.settings import WEBCAM_URL
+from meteography.django.broadcaster.settings import WEBCAM_STATIC_URL
 from meteography.django.broadcaster.storage import webcam_fs
 
 
@@ -161,7 +160,7 @@ class Prediction(models.Model):
         get_latest_by = 'comp_date'
 
     def url(self):
-        return os.path.join('/', WEBCAM_URL, self.path)
+        return '/%s/%s' % (WEBCAM_STATIC_URL, self.path)
 
     def minutes_target(self):
         return (self.params.intervals[-1] // 60)
@@ -172,7 +171,7 @@ class Prediction(models.Model):
         target_timestamp = int(time.mktime(target_date.timetuple()))
         cam_id = self.params.webcam.webcam_id
         rel_path = webcam_fs.picture_path(cam_id, target_timestamp)
-        return os.path.join('/', WEBCAM_URL, rel_path)
+        return '/%s/%s' % (WEBCAM_STATIC_URL, rel_path)
 
     def create(self, *args, **kwargs):
         with webcam_fs.fs.open(self.path, 'w') as fp:

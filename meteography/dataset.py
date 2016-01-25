@@ -246,29 +246,39 @@ class ImageSet:
         return self.table.nrows
 
     def _add_image(self, name, img_time, pixels, ret_reduced=True):
-        # FIXME check it does not exist
         img_id = self.table.nrows
         row_pixels = pixels
         ret_pixels = pixels
 
+        # Apply reduction if required
         if self.is_reduced:
             row_pixels = self.pca.transform([pixels])[0]
             if ret_reduced:
                 ret_pixels = row_pixels
 
-        row = self.table.row
-        row['name'] = name
-        row['time'] = img_time
-        row['pixels'] = row_pixels
-        row.append()
+        # If there is already an image for this time, update it
+        existing = self.table.where('time == img_time')
+        existing = next(existing, None)
+        if existing is not None:
+            existing['pixels'] = row_pixels
+            existing.update()
+            return self._img_from_row(existing, ret_reduced)
 
-        # update or invalidate times cache
-        if self._times is not None and img_time > self._times[-1]:
-            self._times.append(img_time)
+        # Otherwise, add it
         else:
-            self._times = None
+            row = self.table.row
+            row['name'] = name
+            row['time'] = img_time
+            row['pixels'] = row_pixels
+            row.append()
 
-        return self._img_dict(name, img_time, ret_pixels, img_id)
+            # update or invalidate times cache
+            if self._times is not None and img_time > self._times[-1]:
+                self._times.append(img_time)
+            else:
+                self._times = None
+
+            return self._img_dict(name, img_time, ret_pixels, img_id)
 
     def pixels_from_file(self, imgfile):
         """

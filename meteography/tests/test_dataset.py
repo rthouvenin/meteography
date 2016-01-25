@@ -102,6 +102,14 @@ class TestImageSet:
         assert(len(imageset) == prev_len+1)
         assert(img['id'] == prev_len)
 
+    def test_addfromfile_twice(self, imageset, imgfile):
+        "Adding an existing timestamp should not increase the length"
+        img = imageset.add_from_file(imgfile)
+        prev_len = len(imageset)
+        img = imageset.add_from_file(imgfile)
+        assert(len(imageset) == prev_len)
+        assert(img['id'] == prev_len-1)
+
     def test_addfromfile_reduced(self, bigimageset, imgfile):
         "Adding a file should still work after reducing the set"
         bigimageset.reduce_dim()

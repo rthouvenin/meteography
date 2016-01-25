@@ -6,7 +6,7 @@ import matplotlib
 matplotlib.use('Agg')  # FIXME put somewhere more appropriate
 import matplotlib.pyplot as plt
 
-from django.http import HttpResponse, HttpResponseNotFound
+from django.http import HttpResponse, HttpResponseNotFound, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, render
 from django.utils.timezone import utc
 from django.views.decorators.csrf import csrf_exempt
@@ -38,6 +38,14 @@ def webcam(request, webcam_id):
 @csrf_exempt
 @require_http_methods(['PUT'])
 def picture(request, webcam_id, timestamp):
+    # FIXME have proper authentication
+    hostname = request.get_host()
+    has_port = hostname.find(':')
+    if has_port > 0:
+        hostname = hostname[:has_port]
+    if hostname != '127.0.0.1':
+        return HttpResponseForbidden()
+
     # check the webcam exists, return 404 if not
     try:
         webcam = Webcam.objects.get(webcam_id=webcam_id)

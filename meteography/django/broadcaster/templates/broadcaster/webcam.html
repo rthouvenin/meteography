@@ -10,7 +10,7 @@
 
     {% if webcam.pred_params_list %}
       <ul class="pred-recap alternated">
-        {% for params in webcam.pred_params_list %}
+        {% for params in webcam.predictionparams_set.all %}
           <li>
             {% latest_prediction params %}
 

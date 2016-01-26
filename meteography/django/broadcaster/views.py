@@ -1,5 +1,4 @@
 import io
-import os.path
 from datetime import datetime
 
 import matplotlib
@@ -37,6 +36,7 @@ def webcam(request, webcam_id):
 @csrf_exempt
 @require_http_methods(['PUT'])
 def picture(request, webcam_id, timestamp):
+    "Handles upload of pictures"
     # FIXME have proper authentication
     hostname = request.get_host()
     has_port = hostname.find(':')
@@ -59,7 +59,7 @@ def picture(request, webcam_id, timestamp):
     # Make a new prediction and save it for each set of prediction params
     params_list = webcam.predictionparams_set.all()
     for params in params_list:
-        prediction = forecast.make_prediction(webcam, params, timestamp)
+        prediction = forecast.make_prediction(webcam, params, int(timestamp))
 
         # Check if there was any prediction targetting this timestamp,
         # and if yes compute the error
@@ -74,6 +74,7 @@ def picture(request, webcam_id, timestamp):
 
 
 def error_graph(request, webcam_id, pname):
+    "Generate a graph of error evolution over time"
     pred_params = get_object_or_404(PredictionParams,
                                     webcam_id=webcam_id, name=pname)
 

@@ -57,9 +57,6 @@ class Webcam(models.Model):
     name = models.CharField(max_length=32)
     compressed = models.BooleanField(default=False)
 
-    def pred_params_list(self):
-        return PredictionParams.objects.filter(webcam=self)
-
     def latest_prediction(self):
         predictions = Prediction.objects.filter(params__webcam=self)
         return predictions.latest() if predictions else None
@@ -100,6 +97,7 @@ class Picture:
 
 
 class PredictionParams(models.Model):
+    "The parameters for the computation of predictions"
     webcam = models.ForeignKey(Webcam)
     name = models.SlugField(max_length=16)
     intervals = CommaSeparatedIntegerField(max_length=128)
@@ -109,6 +107,7 @@ class PredictionParams(models.Model):
         return predictions.latest() if predictions else None
 
     def history(self, length=5, with_error=True):
+        "Return the latest predictions for this parameters object"
         history_set = self.prediction_set.order_by('-comp_date')
 
         if with_error is True:
@@ -119,6 +118,10 @@ class PredictionParams(models.Model):
         return history_set[:length]
 
     def error_list(self):
+        """
+        The complete list of prediction errors for this parameters object,
+        ordered by ascending computation date
+        """
         predictions = self.prediction_set.order_by('comp_date')
         predictions = predictions.exclude(error=None)
         errors = predictions.values_list('error', flat=True)
@@ -166,6 +169,10 @@ class Prediction(models.Model):
         return (self.params.intervals[-1] // 60)
 
     def actual(self):
+        """
+        Url to the actual picture received
+        at the target time of this prediction
+        """
         target_delta = timedelta(seconds=self.params.intervals[-1])
         target_date = self.comp_date + target_delta
         target_timestamp = int(time.mktime(target_date.timetuple()))

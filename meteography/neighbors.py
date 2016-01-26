@@ -11,7 +11,7 @@ from meteography.dataset import PIXEL_TYPE
 
 
 class NearestNeighbors:
-    BATCH_SIZE = 20 * 1024 * 1024
+    BATCH_SIZE = 20 * 1024 * 1024  # 20 Mb
 
     def __init__(self):
         self.sknn = SKNN(1, algorithm='brute')

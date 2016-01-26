@@ -11,11 +11,27 @@ from meteography.django.broadcaster.storage import webcam_fs
 
 
 def make_prediction(webcam, params, timestamp):
+    """
+    Make a prediction using NearestNeighbors algorithm.
+
+    Parameters
+    ----------
+    webcam : Webcam instance
+        The source of pictures
+    params : PredictionParams instance
+        The parameters to use to compute the prediction
+    timestamp : int
+        The Unix-Epoch-timestamp (UTC) of when the prediction would happen
+
+    Return
+    ------
+    Prediction instance
+    """
     cam_id = webcam.webcam_id
     result = None
     with webcam_fs.get_dataset(cam_id) as dataset:
         onlineset = dataset.get_set(params.name)
-        new_input = dataset.make_input(onlineset, int(timestamp))
+        new_input = dataset.make_input(onlineset, timestamp)
         if new_input is not None and len(onlineset.input) > 0:
             neighbors = NearestNeighbors()
             neighbors.fit(onlineset.input)
@@ -24,7 +40,7 @@ def make_prediction(webcam, params, timestamp):
             # FIXME reference existing image (data and file)
             imgpath = webcam_fs.prediction_path(cam_id, params.name, timestamp)
             result = Prediction(params=params, path=imgpath)
-            result.comp_date = datetime.fromtimestamp(float(timestamp), utc)
+            result.comp_date = datetime.fromtimestamp(timestamp, utc)
             result.sci_bytes = output
             result.create()
     return result
@@ -43,7 +59,7 @@ def update_prediction(prediction, real_pic):
 
     Return
     ------
-    float: the prediction error
+    float : the prediction error
     """
     pred_pic = prediction.as_picture()
     error = analysis.compute_error(pred_pic.pixels, real_pic.pixels)

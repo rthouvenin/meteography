@@ -8,13 +8,14 @@
   <section>
     <h2>List of prediction configurations</h2>
 
-    {% if webcam.pred_params_list %}
-      <ul class="pred-recap alternated">
-        {% for params in webcam.predictionparams_set.all %}
-          <li>
-            {% latest_prediction params %}
+    {% with params_list=webcam.predictionparams_set.all %}
+      {% if params_list %}
+        <ul class="pred-recap alternated">
+          {% for params in params_list %}
+            <li>
+              {% latest_prediction params %}
 
-            <div>
+              <div>
                 <table class="pred-history">
                   <tr>
                     <td>Computed on</td>
@@ -33,14 +34,15 @@
                 </table>
                 <img src="{% url 'error_graph' webcam.webcam_id params.name %}"
                      class="errgraph" alt="Evolution of prediction error over time"/>
-            </div>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p>No prediction configuration available.</p>
-    {% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
 
+      {% else %}
+        <p>No prediction configuration available.</p>
+      {% endif %}
+    {% endwith %}
   </section>
 {% endblock %}
 

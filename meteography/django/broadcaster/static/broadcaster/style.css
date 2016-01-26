@@ -1,20 +1,29 @@
+body {
+  padding: 10px;
+}
+
+.linked-list li > a {
+  color: inherit;
+}
+
 .pred-recap {
   list-style: none;
 }
-
 .pred-recap li {
   padding: 10px;
 }
-.pred-recap.alternated > li:nth-child(odd) {
-  background-color: paleturquoise;
+.pred-recap > li:nth-child(odd) {
+  background-color: #ddddff;
 }
-.pred-recap.alternated > li:nth-child(even) {
-  background-color: cadetblue;
+.pred-recap > li:nth-child(even) {
+  background-color: #bbbbff;
+}
+.pred-recap.linked-list > li:hover {
+  background-color: #ccccff;
 }
 .pred-recap .thumbnail {
   vertical-align: middle;
 }
-
 .pred-recap div {
   display: inline-block;
   vertical-align: middle;

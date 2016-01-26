@@ -1,15 +1,27 @@
 {% extends "broadcaster/base.html" %}
 {% load broadcastertags %}
 
-{% block title %}Meteography{% endblock %}
+{% block title %}Meteography - Ciel fastueux{% endblock %}
 
 {% block body %}
   <h1>Meteography</h1>
-  <p>This is a meteographer</p>
+  <p>
+    This is a meteographer. Maybe you have seen your grandfather look at the
+    horizon and tell you what the weather will be the day after?
+    That is what Meteography is: using a stream of photos from a fixed webcam
+    to predict what the sky will be like in the near future.
+    It does not forecast the weather in terms of temperature, wind, rain, etc.
+    but rather generate an image picturing what the webcam should capture later.
+  </p>
+  <p>
+    This is a project originally started to learn about machine learning, it is
+    still in early development phase. The source code is available on
+    <a href="https://github.com/rthouvenin/meteography">Github</a>.
+  </p>
   <section>
     <h2>List of cameras</h2>
     {% if webcams %}
-      <ul class="pred-recap alternated">
+      <ul class="pred-recap alternated linked-list">
         {% for webcam in webcams %}
           <li>
             <a href="{% url 'webcam' webcam.webcam_id %}">

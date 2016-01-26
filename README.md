@@ -8,6 +8,9 @@ Meteography is written in Python using (among others) Pytables and Scikit-learn.
 
 ----------
 
+### See
+There is a public deployment (used for tests) where you can see the progress of the project and what it looks like: http://ciel.fastu.eu
+
 ### Install (for dev)
 The project is still in early development phase. But if you want to install it anyway to play with it, or want to contribute, you can.
 To do so, clone the source and optionally create a virtual environment if you don't want to affect your system packages (you can also use the `--user` option of pip).

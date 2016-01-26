@@ -29,7 +29,7 @@ From the root directory of the project:
     $ cd website/
     $ mkdir data cams
     $ python manage.py migrate
-    $ create super user: 'python manage.py createsuperuser'
+    $ python manage.py createsuperuser
 
 ### Use
 You can now start the server (still from website directory):

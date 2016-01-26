@@ -10,12 +10,12 @@
 
     {% with params_list=webcam.predictionparams_set.all %}
       {% if params_list %}
-        <ul class="pred-recap alternated">
+        <ul class="pred-recap">
           {% for params in params_list %}
             <li>
               {% latest_prediction params %}
 
-              <div>
+              <div class="details-panel">
                 <table class="pred-history">
                   <tr>
                     <td>Computed on</td>
@@ -28,7 +28,7 @@
                       <td>{{ prediction.comp_date }}</td>
                       <td><img src="{{ prediction.url }}" class="thumbnail" /></td>
                       <td><img src="{{ prediction.actual }}" class="thumbnail" /></td>
-                      <td>{{ prediction.error }}</td>
+                      <td>{{ prediction.error|floatformat:2 }}</td>
                     </tr>
                   {% endfor %}
                 </table>

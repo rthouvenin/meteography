@@ -117,14 +117,18 @@ class PredictionParams(models.Model):
 
         return history_set[:length]
 
-    def error_list(self):
+    def error_data(self):
         """
         The complete list of prediction errors for this parameters object,
         ordered by ascending computation date
+
+        Return
+        ------
+        list(tuple) : The computation dates and associated error
         """
         predictions = self.prediction_set.order_by('comp_date')
         predictions = predictions.exclude(error=None)
-        errors = predictions.values_list('error', flat=True)
+        errors = predictions.values_list('comp_date', 'error')
         return errors
 
     def save(self, *args, **kwargs):

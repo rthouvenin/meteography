@@ -4,6 +4,7 @@ from datetime import datetime
 import matplotlib
 matplotlib.use('Agg')  # FIXME put somewhere more appropriate
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 from django.http import (
     HttpResponse, HttpResponseNotFound, HttpResponseForbidden)
@@ -78,11 +79,23 @@ def error_graph(request, webcam_id, pname):
     pred_params = get_object_or_404(PredictionParams,
                                     webcam_id=webcam_id, name=pname)
 
-    errors = pred_params.error_list()
-    plt.plot(errors)
-    img_bytes = io.BytesIO()
-    plt.savefig(img_bytes, format='png')
-    plt.close()
-    response = HttpResponse(content_type='image/png')
-    response.write(img_bytes.getvalue())
+    dates, errors = zip(*pred_params.error_data())
+    try:
+        # Generate the graph with matplotlib
+        fig, ax = plt.subplots()
+        ax.plot(dates, errors)
+        plt.title("Evolution of error value over time")
+        plt.xlabel("Time")
+        plt.ylabel("Error")
+        ax.xaxis.set_major_locator(plt.MaxNLocator(5))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%Y'))
+
+        # Write the graph image to the response
+        img_bytes = io.BytesIO()
+        plt.savefig(img_bytes, format='png')
+        response = HttpResponse(content_type='image/png')
+        response.write(img_bytes.getvalue())
+    finally:
+        plt.close()
+
     return response

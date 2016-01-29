@@ -41,25 +41,27 @@ def imgfile(tmpdir_factory, t=12000):
     img.save(filename)
     return filename
 
+@pytest.fixture(scope='session')
+def filedimages(tmpdir_factory):
+    random.seed(42)  # Reproducible tests
+    images = [make_filedict(t, True) for t in range(6000, 12000, 60)]
+    for img in images:
+        img['name'] = imgfile(tmpdir_factory, img['img_time'])
+    return images
+
 @pytest.fixture(scope='class')
 def imageset(request, tmpdir_factory):
     images = [make_filedict(t) for t in [4200, 420, 4242, 42]]
     return imgset_fixture(request, tmpdir_factory, 'imageset.h5', images)
 
-@pytest.fixture
-def bigimageset(request, tmpdir_factory):
-    random.seed(42)  # Reproducible tests
-    images = [make_filedict(t, True) for t in range(6000, 12000, 60)]
-    return imgset_fixture(request, tmpdir_factory, 'bigimageset.h5', images)
+@pytest.fixture(scope='session')
+def bigimageset(request, tmpdir_factory, filedimages):
+    return imgset_fixture(request, tmpdir_factory, 'bigimageset.h5', filedimages)
 
 @pytest.fixture
-def filedimageset(request, tmpdir_factory):
-    "Same as bigimageset, but image files actually exist"
-    random.seed(42)  # Reproducible tests
-    images = [make_filedict(t, True) for t in range(6000, 12000, 60)]
-    for img in images:
-        img['name'] = imgfile(tmpdir_factory, img['img_time'])
-    return imgset_fixture(request, tmpdir_factory, 'bigimageset.h5', images)
+def bigimageset_rw(request, tmpdir_factory, filedimages):
+    "For tests that will modify the set"
+    return bigimageset(request, tmpdir_factory, filedimages)
 
 @pytest.fixture
 def emptyimageset(request, tmpdir_factory):
@@ -110,12 +112,12 @@ class TestImageSet:
         assert(len(imageset) == prev_len)
         assert(img['id'] == prev_len-1)
 
-    def test_addfromfile_reduced(self, bigimageset, imgfile):
+    def test_addfromfile_reduced(self, bigimageset_rw, imgfile):
         "Adding a file should still work after reducing the set"
-        bigimageset.reduce_dim()
-        prev_len = len(bigimageset)
-        bigimageset.add_from_file(imgfile)
-        assert(len(bigimageset) == prev_len+1)
+        bigimageset_rw.reduce_dim()
+        prev_len = len(bigimageset_rw)
+        bigimageset_rw.add_from_file(imgfile)
+        assert(len(bigimageset_rw) == prev_len+1)
 
     def test_sort(self, imageset):
         "The first element should have the smallest time"
@@ -151,59 +153,64 @@ class TestImageSet:
         "The closest match is greater than the target but not acceptable"
         self.helper_closest_nomatch(imageset, 4000, 50)
 
-    def test_reduce_fewimg(self, bigimageset):
+    def test_reduce_fewimg(self, bigimageset_rw):
         "More pixels than images should lead to less components than images"
-        prev_length = len(bigimageset)
-        bigimageset.reduce_dim()
-        img0 = next(iter(bigimageset))
-        assert(len(bigimageset) == prev_length)
-        assert(bigimageset.pca is not None)
-        assert(bigimageset.fileh.root.images.pcamodel is not None)
-        assert(len(img0['pixels']) <= len(bigimageset) < IMG_SIZE*IMG_SIZE)
+        prev_length = len(bigimageset_rw)
+        bigimageset_rw.reduce_dim()
+        img0 = next(iter(bigimageset_rw))
+        assert(len(bigimageset_rw) == prev_length)
+        assert(bigimageset_rw.pca is not None)
+        assert(bigimageset_rw.fileh.root.images.pcamodel is not None)
+        assert(len(img0['pixels']) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
 
-    def test_reduce_twice(self, filedimageset):
+    def test_reduce_twice(self, bigimageset_rw):
         "Reducing twice the same set should not cause any problem"
-        prev_length = len(filedimageset)
-        filedimageset.reduce_dim()
-        filedimageset.reduce_dim()
-        img0 = next(iter(filedimageset))
-        assert(len(filedimageset) == prev_length)
-        assert(filedimageset.pca is not None)
-        assert(filedimageset.fileh.root.images.pcamodel is not None)
-        assert(len(img0['pixels']) <= len(filedimageset) < IMG_SIZE*IMG_SIZE)
+        prev_length = len(bigimageset_rw)
+        bigimageset_rw.reduce_dim()
+        bigimageset_rw.reduce_dim()
+        img0 = next(iter(bigimageset_rw))
+        assert(len(bigimageset_rw) == prev_length)
+        assert(bigimageset_rw.pca is not None)
+        assert(bigimageset_rw.fileh.root.images.pcamodel is not None)
+        assert(len(img0['pixels']) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
 
-    def test_reduce_smallsample(self, bigimageset):
+    def test_reduce_smallsample(self, bigimageset_rw):
         "More images than sample size"
-        prev_length = len(bigimageset)
+        prev_length = len(bigimageset_rw)
         sample_size = prev_length / 2
-        bigimageset.reduce_dim(sample_size, None)
-        img0 = next(iter(bigimageset))
-        assert(len(bigimageset) == prev_length)
-        assert(bigimageset.pca is not None)
-        assert(bigimageset.fileh.root.images.pcamodel is not None)
+        bigimageset_rw.reduce_dim(sample_size, None)
+        img0 = next(iter(bigimageset_rw))
+        assert(len(bigimageset_rw) == prev_length)
+        assert(bigimageset_rw.pca is not None)
+        assert(bigimageset_rw.fileh.root.images.pcamodel is not None)
         assert(len(img0['pixels']) == sample_size)
 
-    def test_reduce_manyimg(self, filedimageset, tmpdir_factory):
+    def test_reduce_manyimg(self, bigimageset_rw, tmpdir_factory):
         """More images than pixels but less than sample size
         won't reduce the dimensionality, even after a first reduction"""
-        filedimageset.reduce_dim()
+        bigimageset_rw.reduce_dim()
         images = [make_filedict(t, True) for t in range(6000, 30000, 60)]
         for img in images:
             img['name'] = imgfile(tmpdir_factory, img['img_time'])
-            filedimageset._add_image(**img)
-        filedimageset.fileh.flush()
-        prev_length = len(filedimageset)
-        filedimageset.reduce_dim(450, None)
-        img0 = next(iter(filedimageset))
-        assert(len(filedimageset) == prev_length)
+            bigimageset_rw._add_image(**img)
+        bigimageset_rw.fileh.flush()
+        prev_length = len(bigimageset_rw)
+        bigimageset_rw.reduce_dim(450, None)
+        img0 = next(iter(bigimageset_rw))
+        assert(len(bigimageset_rw) == prev_length)
         assert(len(img0['pixels']) == IMG_SIZE*IMG_SIZE)
 
 
-@pytest.fixture
+@pytest.fixture(scope='class')
 def dataset(bigimageset):
     dataset = DataSet.create(bigimageset)
     dataset.make_set('test', 5, 60, 120)
     return dataset
+
+@pytest.fixture
+def dataset_rw(bigimageset_rw):
+    "For tests that will modify the dataset"
+    return dataset(bigimageset_rw)
 
 @pytest.fixture
 def emptydataset(emptyimageset):
@@ -266,46 +273,46 @@ class TestDataSet:
         assert(len(testset.input) == 0)
         assert(len(testset.output) == 0)
 
-    def test_add_newexample(self, dataset, imgfile):
+    def test_add_newexample(self, dataset_rw, imgfile):
         "Adding an image to a compatible dataset should create a new example"
-        prev_length = len(dataset.imgset)
-        testset = dataset.fileh.root.examples.test
+        prev_length = len(dataset_rw.imgset)
+        testset = dataset_rw.fileh.root.examples.test
         prev_nb_ex = len(testset.input)
-        dataset.add_image(imgfile, 'test')
-        assert(len(dataset.imgset) == prev_length + 1)
+        dataset_rw.add_image(imgfile, 'test')
+        assert(len(dataset_rw.imgset) == prev_length + 1)
         assert(len(testset.input) == prev_nb_ex + 1)
         assert(len(testset.output) == prev_nb_ex + 1)
 
-    def test_reducedim(self, dataset):
-        testset = dataset.fileh.root.examples.test
+    def test_reducedim(self, dataset_rw):
+        testset = dataset_rw.fileh.root.examples.test
         prev_refs_shape = testset.img_refs.shape
         prev_nb_feat = testset.input.shape[1]
         prev_imgdim = testset.output.shape[1]
-        dataset.reduce_dim()
+        dataset_rw.reduce_dim()
         assert(testset.img_refs.shape == prev_refs_shape)
         assert(len(testset.input) == prev_refs_shape[0])
         assert(len(testset.output) == prev_refs_shape[0])
         assert(testset.input.shape[1] < prev_nb_feat)
         assert(testset.output.shape[1] < prev_imgdim)
 
-    def test_add_afterreduced(self, dataset, imgfile):
+    def test_add_afterreduced(self, dataset_rw, imgfile):
         """Adding an image to a dataset after it was reduced should
         not be a problem"""
-        prev_length = len(dataset.imgset)
-        testset = dataset.fileh.root.examples.test
+        prev_length = len(dataset_rw.imgset)
+        testset = dataset_rw.fileh.root.examples.test
         prev_nb_ex = len(testset.input)
-        dataset.reduce_dim()
-        dataset.add_image(imgfile, 'test')
-        assert(len(dataset.imgset) == prev_length + 1)
+        dataset_rw.reduce_dim()
+        dataset_rw.add_image(imgfile, 'test')
+        assert(len(dataset_rw.imgset) == prev_length + 1)
         assert(len(testset.input) == prev_nb_ex + 1)
         assert(len(testset.output) == prev_nb_ex + 1)
 
-    def test_repack(self, dataset):
+    def test_repack(self, dataset_rw):
         "Repacking should reclaim the space of a deleted set"
-        prev_size = dataset.fileh.get_filesize()
-        dataset.delete_set('test')
-        dataset.repack()
-        new_size = dataset.fileh.get_filesize()
+        prev_size = dataset_rw.fileh.get_filesize()
+        dataset_rw.delete_set('test')
+        dataset_rw.repack()
+        new_size = dataset_rw.fileh.get_filesize()
         assert(new_size < prev_size)
 
     def test_getoutput(self, dataset):

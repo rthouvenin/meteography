@@ -40,7 +40,7 @@ def image_descriptor(img_size):
     return {
         'name': tables.StringCol(256),
         'time': tables.UIntCol(),
-        'pixels': tables.Col.from_sctype(PIXEL_TYPE, img_size)
+        'pixels': tables.Col.from_sctype(PIXEL_TYPE, img_size)  # FIXME move to features
     }
 
 
@@ -67,6 +67,33 @@ def parse_path(filename):
     date = datetime(year, month, day, int(hour), int(minute))
     return int(time.mktime(date.timetuple()))
 
+
+class RawFeatures:
+    def __init__(self, img_shape):
+        self.img_shape = img_shape
+        self.name = 'raw%dx%d' % (img_shape[1], img_shape[0])
+        self.atom = tables.Atom.from_sctype(PIXEL_TYPE)
+        self.nb_features = np.prod(img_shape)
+
+
+class FeaturesSet:
+    def __init__(self, root_group):
+        self.root = root_group
+
+    @classmethod
+    def create(cls, tables_file, root, features_obj):
+        group_name = features_obj.name
+        group = tables_file.create_group(root, group_name)
+
+        tables_file.create_earray(group, 'features', features_obj.atom,
+                                  shape=(0, features_obj.nb_features))
+        return cls(group)
+
+    def append(self, pixels):
+        self.root.features.append([pixels])
+
+    def __getitem__(self, idx):
+        return self.root.features[idx]
 
 class ImageSet:
     def __init__(self, fileh):
@@ -108,6 +135,12 @@ class ImageSet:
             self.img_size = np.prod(self.img_shape)
         self._times = None
 
+        self.feature_sets = {}
+        for node in fileh.root.images:
+            node_name = node._v_name
+            if node_name not in ['imgset', 'pcamodel']:
+                self.feature_sets[node_name] = FeaturesSet(node)
+
     @classmethod
     def create(cls, thefile, img_shape):
         """
@@ -134,12 +167,16 @@ class ImageSet:
             table = fp.create_table(group, 'imgset', desc)
             table.attrs.img_shape = img_shape
             table.cols.time.create_csindex()
-        except Exception as e:
+
+            features_obj = RawFeatures(img_shape)
+            features_set = FeaturesSet.create(fp, group, features_obj)
+
+            return cls(fp)
+        except Exception:
             #Avoid an orphan open file in case of a problem
             if fp is not thefile:
                 fp.close()
-            raise e
-        return cls(fp)
+            raise
 
     @classmethod
     def open(cls, thefile):
@@ -176,16 +213,19 @@ class ImageSet:
             'id': img_id
         }
 
-    def _img_from_row(self, row, ret_reduced=True):
+    def _img_from_row(self, row, ret_reduced=True, feature_set=None):
         """
         Create from a row a dictionary with the details of the image in that
         row. If `ret_reduced` is True and the ImageSet was reduced, the key
         'pixels' will contain the PCA-transformed data.
         """
+        if feature_set is None:
+            feature_set = self.feature_sets.values()[0]
+
         if not ret_reduced and self.is_reduced:
             pixels = self.pixels_from_file(row['name'])
         else:
-            pixels = row['pixels']
+            pixels = feature_set[row.nrow]
         img = self._img_dict(row['name'], row['time'], pixels, row.nrow)
         return img
 
@@ -272,6 +312,9 @@ class ImageSet:
             row['time'] = img_time
             row['pixels'] = row_pixels
             row.append()
+
+            for feature_set in self.feature_sets.values():
+                feature_set.append(pixels)
 
             # update or invalidate times cache
             if self._times is not None and img_time > self._times[-1]:
@@ -373,20 +416,6 @@ class ImageSet:
                 except Exception as e:
                     logger.warn("Ignoring file %s: %s" % (fullname, e))
         self.table.flush()
-
-    def sort(self):
-        """
-        Replaces the image table with a copy sorted by time.
-        This method should be called before reducing the ImageSet, as it will
-        not sort the compressed data.
-        """
-        newtable = self.table.copy(newname='sortedimgset', sortby='time',
-                                   propindexes=True)
-        self.table.remove()
-        newtable.rename('imgset')
-        self.table = newtable
-        self.fileh.flush()
-        self.sorted = True
 
     def _sample(self, sample_size):
         """

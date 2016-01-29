@@ -42,16 +42,20 @@ def imgfile(tmpdir_factory, t=12000):
     return filename
 
 @pytest.fixture(scope='session')
-def filedimages(tmpdir_factory):
+def times():
+    return range(6000, 12000, 60)
+
+@pytest.fixture(scope='session')
+def filedimages(tmpdir_factory, times, jitter=True):
     random.seed(42)  # Reproducible tests
-    images = [make_filedict(t, True) for t in range(6000, 12000, 60)]
+    images = [make_filedict(t, jitter) for t in times]
     for img in images:
         img['name'] = imgfile(tmpdir_factory, img['img_time'])
     return images
 
 @pytest.fixture(scope='class')
 def imageset(request, tmpdir_factory):
-    images = [make_filedict(t) for t in [4200, 420, 4242, 42]]
+    images = filedimages(tmpdir_factory, [4200, 420, 4242, 42], False)
     return imgset_fixture(request, tmpdir_factory, 'imageset.h5', images)
 
 @pytest.fixture(scope='session')
@@ -119,12 +123,6 @@ class TestImageSet:
         bigimageset_rw.add_from_file(imgfile)
         assert(len(bigimageset_rw) == prev_len+1)
 
-    def test_sort(self, imageset):
-        "The first element should have the smallest time"
-        imageset.sort()
-        img0 = next(iter(imageset))
-        assert(img0['time'] == 42)
-
     def test_closest_last_inrange(self, imageset):
         "The target is past the last element, the last element is acceptable"
         self.helper_closest_match(imageset, 4280, 50, 4242)
@@ -157,33 +155,33 @@ class TestImageSet:
         "More pixels than images should lead to less components than images"
         prev_length = len(bigimageset_rw)
         bigimageset_rw.reduce_dim()
-        img0 = next(iter(bigimageset_rw))
+        img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
         assert(bigimageset_rw.pca is not None)
         assert(bigimageset_rw.fileh.root.images.pcamodel is not None)
-        assert(len(img0['pixels']) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
+        assert(len(img0) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
 
     def test_reduce_twice(self, bigimageset_rw):
         "Reducing twice the same set should not cause any problem"
         prev_length = len(bigimageset_rw)
         bigimageset_rw.reduce_dim()
         bigimageset_rw.reduce_dim()
-        img0 = next(iter(bigimageset_rw))
+        img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
         assert(bigimageset_rw.pca is not None)
         assert(bigimageset_rw.fileh.root.images.pcamodel is not None)
-        assert(len(img0['pixels']) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
+        assert(len(img0) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
 
     def test_reduce_smallsample(self, bigimageset_rw):
         "More images than sample size"
         prev_length = len(bigimageset_rw)
         sample_size = prev_length / 2
         bigimageset_rw.reduce_dim(sample_size, None)
-        img0 = next(iter(bigimageset_rw))
+        img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
         assert(bigimageset_rw.pca is not None)
         assert(bigimageset_rw.fileh.root.images.pcamodel is not None)
-        assert(len(img0['pixels']) == sample_size)
+        assert(len(img0) == sample_size)
 
     def test_reduce_manyimg(self, bigimageset_rw, tmpdir_factory):
         """More images than pixels but less than sample size
@@ -196,9 +194,9 @@ class TestImageSet:
         bigimageset_rw.fileh.flush()
         prev_length = len(bigimageset_rw)
         bigimageset_rw.reduce_dim(450, None)
-        img0 = next(iter(bigimageset_rw))
+        img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
-        assert(len(img0['pixels']) == IMG_SIZE*IMG_SIZE)
+        assert(len(img0) == IMG_SIZE*IMG_SIZE)
 
 
 @pytest.fixture(scope='class')

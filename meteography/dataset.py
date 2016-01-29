@@ -75,10 +75,30 @@ class RawFeatures:
         self.atom = tables.Atom.from_sctype(PIXEL_TYPE)
         self.nb_features = np.prod(img_shape)
 
+    def extract(self, pixels):
+        return pixels
+
+
+class PCAFeatures:
+    def __init__(self, pca_model):
+        self.name = 'pca'
+        self.atom = tables.Float32Atom()
+        self.nb_features = pca_model.components_.shape[0]
+        self.pca = pca_model
+
+    def extract(self, pixels):
+        return self.pca.transform([pixels])[0]
+
 
 class FeaturesSet:
-    def __init__(self, root_group):
+    def __init__(self, root_group, features_obj=None):
         self.root = root_group
+        if features_obj is None:
+            fn = filenode.open_node(self.root.model, 'r')
+            self.features_obj = pickle.load(fn)
+            fn.close()
+        else:
+            self.features_obj = features_obj
 
     @classmethod
     def create(cls, tables_file, root, features_obj):
@@ -87,13 +107,24 @@ class FeaturesSet:
 
         tables_file.create_earray(group, 'features', features_obj.atom,
                                   shape=(0, features_obj.nb_features))
-        return cls(group)
+
+        fn = filenode.new_node(tables_file, where=group, name='model')
+        pickle.dump(features_obj, fn, pickle.HIGHEST_PROTOCOL)
+        fn.close()
+
+        return cls(group, features_obj)
 
     def append(self, pixels):
-        self.root.features.append([pixels])
+        data = self.features_obj.extract(pixels)
+        self.root.features.append([data])
+        return data
 
     def __getitem__(self, idx):
-        return self.root.features[idx]
+        return self.root.features[idx, :]
+
+    def flush(self):
+        return self.root.features.flush()
+
 
 class ImageSet:
     def __init__(self, fileh):
@@ -213,23 +244,29 @@ class ImageSet:
             'id': img_id
         }
 
-    def _img_from_row(self, row, ret_reduced=True, feature_set=None):
+    def _get_feature_set(self, feature_set):
+        if feature_set in self.feature_sets:
+            feature_set = self.feature_sets[feature_set]
+        return feature_set
+
+    def _img_from_row(self, row, feature_set=None):
         """
         Create from a row a dictionary with the details of the image in that
         row. If `ret_reduced` is True and the ImageSet was reduced, the key
         'pixels' will contain the PCA-transformed data.
         """
-        if feature_set is None:
-            feature_set = self.feature_sets.values()[0]
 
-        if not ret_reduced and self.is_reduced:
+        if feature_set is None:
             pixels = self.pixels_from_file(row['name'])
         else:
+            print(feature_set)
+            feature_set = self._get_feature_set(feature_set)
             pixels = feature_set[row.nrow]
+
         img = self._img_dict(row['name'], row['time'], pixels, row.nrow)
         return img
 
-    def get_image(self, t, ret_reduced=True):
+    def get_image(self, t, feature_set=None):
         """
         Returns as a dictionary the details of the image taken at time `t`.
         If `ret_reduced` is True and the ImageSet was reduced, the key 'pixels'
@@ -238,19 +275,15 @@ class ImageSet:
         rows = self.table.where('time == t')
         try:
             row = next(rows)
-            return self._img_from_row(row, ret_reduced)
+            return self._img_from_row(row, feature_set)
         except StopIteration:
             raise ValueError("Image with time=%d does not exist" % t)
-
-    def _pcapixels(self, idx):
-        rows = self.table.itersequence(idx)
-        return np.array([r['pixels'] for r in rows])
 
     def _realpixels(self, idx):
         rows = self.table.itersequence(idx)
         return np.array([self.pixels_from_file(r['name']) for r in rows])
 
-    def get_pixels_at(self, idx, ret_reduced=True):
+    def get_pixels_at(self, idx, feature_set=None):
         """
         Retrieves the pixels of one or more images referenced by indices.
 
@@ -262,10 +295,11 @@ class ImageSet:
             If True and the ImageSet was reduced, the PCA-transformed data
             is returned
         """
-        if not ret_reduced and self.is_reduced:
+        if feature_set is None:
             source = self._realpixels
         else:
-            source = self._pcapixels
+            feature_set = self._get_feature_set(feature_set)
+            source = lambda i: feature_set[i]
 
         #numpy scalars also have a __getitem__ ...
         if hasattr(idx, '__getitem__') and not np.isscalar(idx):
@@ -286,7 +320,7 @@ class ImageSet:
         """Return the number of images in the set."""
         return self.table.nrows
 
-    def _add_image(self, name, img_time, pixels, ret_reduced=True):
+    def _add_image(self, name, img_time, pixels, ret_features=None):
         img_id = self.table.nrows
         row_pixels = pixels
         ret_pixels = pixels
@@ -294,8 +328,6 @@ class ImageSet:
         # Apply reduction if required
         if self.is_reduced:
             row_pixels = self.pca.transform([pixels])[0]
-            if ret_reduced:
-                ret_pixels = row_pixels
 
         # If there is already an image for this time, update it
         existing = self.table.where('time == img_time')
@@ -303,7 +335,7 @@ class ImageSet:
         if existing is not None:
             existing['pixels'] = row_pixels
             existing.update()
-            return self._img_from_row(existing, ret_reduced)
+            return self._img_from_row(existing, ret_features)
 
         # Otherwise, add it
         else:
@@ -313,8 +345,11 @@ class ImageSet:
             row['pixels'] = row_pixels
             row.append()
 
+            ret_features = self._get_feature_set(ret_features)
             for feature_set in self.feature_sets.values():
-                feature_set.append(pixels)
+                appended = feature_set.append(pixels)
+                if feature_set is ret_features:
+                    ret_pixels = appended
 
             # update or invalidate times cache
             if self._times is not None and img_time > self._times[-1]:
@@ -356,16 +391,16 @@ class ImageSet:
 
             return data
 
-    def _add_from_file(self, imgfile, name_parser, ret_reduced=True):
+    def _add_from_file(self, imgfile, name_parser, ret_features=None):
         """
         `add_from_file` without flushing the table.
         """
         data = self.pixels_from_file(imgfile)
         img_time = name_parser(imgfile)
-        return self._add_image(imgfile, img_time, data, ret_reduced)
+        return self._add_image(imgfile, img_time, data, ret_features)
 
     def add_from_file(self, imgfile, name_parser=parse_timestamp,
-                      ret_reduced=True):
+                      ret_features=None):
         """
         Add an image to the set.
 
@@ -385,7 +420,7 @@ class ImageSet:
         int : The time (Unix epoch) when the image was taken, that can be used
             to identify it
         """
-        img = self._add_from_file(imgfile, name_parser, ret_reduced)
+        img = self._add_from_file(imgfile, name_parser, ret_features)
         self.table.flush()
         return img
 
@@ -423,13 +458,10 @@ class ImageSet:
         ndarray of shape (`sample_size`, `img_size`).
         """
         if sample_size == self.table.nrows:
-            if self.is_reduced:
-                sample = self.get_pixels_at(range(len(self)), False)
-            else:
-                sample = self.table.cols.pixels[:]
+            sample = self.get_pixels_at(range(len(self)))
         else:
             index = random.sample(xrange(self.table.nrows), sample_size)
-            sample = self.get_pixels_at(index, False)
+            sample = self.get_pixels_at(index)
         return sample
 
     def reduce_dim(self, sample_size=1000, n_dims=.99):
@@ -473,19 +505,29 @@ class ImageSet:
         pca_table = self.fileh.create_table('/images', 'pcaset', desc)
         self.table.attrs._f_copy(pca_table)
 
+        # Create the new FeatureSet
+        features_obj = PCAFeatures(self.pca)
+        if features_obj.name in self.feature_sets:
+            self.feature_sets[features_obj.name].root._f_remove(recursive=True)
+        pca_features = FeaturesSet.create(self.fileh, self.fileh.root.images,
+                                          features_obj)
+        self.feature_sets[features_obj.name] = pca_features
+
         # Apply PCA transformation to all the images,
         # and copy the data to the new table
         row = pca_table.row
         for img in self.table.iterrows():
             # Ensure we get un-reduced data, in case this is not the first
             # time the set is being reduced
-            img = self._img_from_row(img, False)
+            img = self._img_from_row(img)
             row['name'] = img['name']
             row['time'] = img['time']
             row['pixels'] = self.pca.transform([img['pixels']])
             row.append()
+            pca_features.append(img['pixels'])
         pca_table.flush()
         pca_table.cols.time.create_csindex()
+        pca_features.flush()
 
         # Replace the old table
         self.table.remove()
@@ -506,7 +548,7 @@ class ImageSet:
         pixels_out = self.pca.inverse_transform(pca_pixels)
         return pixels_out.clip(0, 1, pixels_out)
 
-    def find_closest(self, start, interval, ret_reduced=True):
+    def find_closest(self, start, interval, feature_set=None):
         """
         Search for the image with its time attribute the closest to
         `start-interval`, constrained in `[start-2*interval, start[`.
@@ -543,12 +585,12 @@ class ImageSet:
 
         if target - left_time < right_time - target:
             if left_time >= mintarget:
-                return self.get_image(left_time, ret_reduced)
+                return self.get_image(left_time, feature_set)
             else:  # At this point we can deduce that right_time >= start
                 return None
         else:
             if right_time < start:
-                return self.get_image(right_time, ret_reduced)
+                return self.get_image(right_time, feature_set)
             else:  # At this point we can deduce that left_time < mintarget
                 return None
 
@@ -833,7 +875,8 @@ class DataSet:
         images = [img]
         for j, interval in enumerate(reversed(intervals)):
             prev_time = images[j]['time']
-            img_j = self.imgset.find_closest(prev_time, interval, self.is_reduced)
+            feature_set = 'pca' if self.is_reduced else None
+            img_j = self.imgset.find_closest(prev_time, interval, feature_set)
             if img_j:
                 images.append(img_j)
             else:
@@ -900,7 +943,8 @@ class DataSet:
         setname : str
             Name of the dataset where the example should be added
         """
-        img = self.imgset.add_from_file(imgfile, ret_reduced=self.is_reduced)
+        feature_set = 'pca' if self.is_reduced else None
+        img = self.imgset.add_from_file(imgfile, ret_features=feature_set)
 
         if ex_set is not None:
             ex_sets = [self._nodify(ex_set)]
@@ -942,9 +986,10 @@ class DataSet:
         """
         nb_ex = ex_set.img_refs._v_expectedrows
         hist_len = len(ex_set._v_attrs.intervals)
+        feature_set = 'pca' if self.is_reduced else None
         self._create_set_arrays(ex_set, None, 'newinput', 'newoutput', nb_ex)
         for refs_row in ex_set.img_refs:
-            pixels_row = self.imgset.get_pixels_at(refs_row)
+            pixels_row = self.imgset.get_pixels_at(refs_row, feature_set)
             newfeatures = pixels_row[:-1].flatten()
             oldfeatures = ex_set.input[ex_set.img_refs.nrow, -hist_len:]
             ex_set.newinput.append([np.hstack([newfeatures, oldfeatures])])
@@ -971,7 +1016,7 @@ class DataSet:
         """
         ex_set = self._nodify(ex_set)
         img_ref = ex_set.img_refs[i][-1]
-        raw_data = self.imgset.get_pixels_at(img_ref, False)
+        raw_data = self.imgset.get_pixels_at(img_ref, None)
         return raw_data.reshape(self.img_shape)
 
     def repack(self):

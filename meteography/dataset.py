@@ -99,6 +99,10 @@ class FeaturesSet:
         else:
             self.features_obj = features_obj
 
+    @property
+    def nb_features(self):
+        return self.features_obj.nb_features
+
     @classmethod
     def create(cls, tables_file, root, features_obj):
         group_name = features_obj.name
@@ -159,22 +163,20 @@ class ImageSet:
         self.table = fileh.root.images.imgset
         self.img_shape = self.table.attrs.img_shape
         self.is_grey = len(self.img_shape) == 2
-        if '/images/pcamodel' in self.fileh:
-            fn = filenode.open_node(self.fileh.root.images.pcamodel, 'r')
-            self.pca = pickle.load(fn)
-            self.is_reduced = True
-            self.img_size = self.pca.components_.shape[0]
-            fn.close()
-        else:
-            self.is_reduced = False
-            self.img_size = np.prod(self.img_shape)
         self._times = None
 
         self.feature_sets = {}
         for node in fileh.root.images:
             node_name = node._v_name
-            if node_name not in ['imgset', 'pcamodel']:
+            if node_name not in ['imgset']:
                 self.feature_sets[node_name] = FeaturesSet(node)
+
+        if 'pca' in self.feature_sets:
+            self.is_reduced = True
+            self.img_size = self.feature_sets['pca'].nb_features
+        else:
+            self.is_reduced = False
+            self.img_size = np.prod(self.img_shape)
 
     @classmethod
     def create(cls, thefile, img_shape):
@@ -492,24 +494,12 @@ class ImageSet:
 
         # Compute PCA components from the sample.
         #FIXME: choose an algo
-        self.pca = PCA(n_components=n_dims).fit(sample)
+        pca_model = PCA(n_components=n_dims).fit(sample)
         ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
-
-        # Store the reduction matrix
-        if 'pcamodel' in self.fileh.root.images:
-            self.fileh.root.images.pcamodel.remove()
-        fn = filenode.new_node(self.fileh, where='/images', name='pcamodel')
-        pickle.dump(self.pca, fn, pickle.HIGHEST_PROTOCOL)
-        fn.close()
-
-        # Create the new table
-        self.img_size = self.pca.components_.shape[0]
-        desc = image_descriptor(self.img_size)
-        pca_table = self.fileh.create_table('/images', 'pcaset', desc)
-        self.table.attrs._f_copy(pca_table)
+        self.img_size = pca_model.components_.shape[0]
 
         # Create the new FeatureSet
-        features_obj = PCAFeatures(self.pca)
+        features_obj = PCAFeatures(pca_model)
         if features_obj.name in self.feature_sets:
             self.feature_sets[features_obj.name].root._f_remove(recursive=True)
         pca_features = FeaturesSet.create(self.fileh, self.fileh.root.images,
@@ -517,38 +507,15 @@ class ImageSet:
         self.feature_sets[features_obj.name] = pca_features
 
         # Apply PCA transformation to all the images,
-        # and copy the data to the new table
-        row = pca_table.row
+        # and store the data to the new feature set
         for img in self.table.iterrows():
             # Ensure we get un-reduced data, in case this is not the first
             # time the set is being reduced
             img = self._img_from_row(img)
-            row['name'] = img['name']
-            row['time'] = img['time']
-            row.append()
             pca_features.append(img['pixels'])
-        pca_table.flush()
-        pca_table.cols.time.create_csindex()
         pca_features.flush()
 
-        # Replace the old table
-        self.table.remove()
-        pca_table.rename('imgset')
-        self.table = pca_table
         self.is_reduced = True
-
-    def recover_images(self, pca_pixels):
-        """
-        Appy inverse PCA transformation to the given transformed data.
-
-        Parameters
-        ----------
-        pca_pixels : array
-        """
-        if not self.is_reduced:
-            return pca_pixels
-        pixels_out = self.pca.inverse_transform(pca_pixels)
-        return pixels_out.clip(0, 1, pixels_out)
 
     def find_closest(self, start, interval, feature_set=None):
         """

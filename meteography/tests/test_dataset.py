@@ -157,8 +157,7 @@ class TestImageSet:
         bigimageset_rw.reduce_dim()
         img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
-        assert(bigimageset_rw.pca is not None)
-        assert(bigimageset_rw.fileh.root.images.pcamodel is not None)
+        assert('pca' in bigimageset_rw.feature_sets)
         assert(len(img0) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
 
     def test_reduce_twice(self, bigimageset_rw):
@@ -168,8 +167,7 @@ class TestImageSet:
         bigimageset_rw.reduce_dim()
         img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
-        assert(bigimageset_rw.pca is not None)
-        assert(bigimageset_rw.fileh.root.images.pcamodel is not None)
+        assert('pca' in bigimageset_rw.feature_sets)
         assert(len(img0) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
 
     def test_reduce_smallsample(self, bigimageset_rw):
@@ -179,8 +177,7 @@ class TestImageSet:
         bigimageset_rw.reduce_dim(sample_size, None)
         img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
-        assert(bigimageset_rw.pca is not None)
-        assert(bigimageset_rw.fileh.root.images.pcamodel is not None)
+        assert('pca' in bigimageset_rw.feature_sets)
         assert(len(img0) == sample_size)
 
     def test_reduce_manyimg(self, bigimageset_rw, tmpdir_factory):

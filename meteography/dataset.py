@@ -72,8 +72,13 @@ class PCAFeatures:
     def extract(self, pixels):
         return self.pca.transform([pixels])[0]
 
+features_extractors = {
+    'raw': RawFeatures,
+    'pca': PCAFeatures,
+}
 
-class FeaturesSet:
+
+class FeatureSet:
     def __init__(self, root_group, features_obj=None):
         self.root = root_group
         if features_obj is None:
@@ -150,16 +155,17 @@ class ImageSet:
             True if the images are processed as greyscale images
         """
         self.fileh = fileh
-        self.table = fileh.root.images.imgset
+        self.root = fileh.root.images
+        self.table = self.root.imgset
         self.img_shape = self.table.attrs.img_shape
         self.is_grey = len(self.img_shape) == 2
         self._times = None
 
         self.feature_sets = {}
-        for node in fileh.root.images:
+        for node in self.root:
             node_name = node._v_name
             if node_name not in ['imgset']:
-                self.feature_sets[node_name] = FeaturesSet(node)
+                self.feature_sets[node_name] = FeatureSet(node)
 
         if 'pca' in self.feature_sets:
             self.is_reduced = True
@@ -194,10 +200,10 @@ class ImageSet:
             table.attrs.img_shape = img_shape
             table.cols.time.create_csindex()
 
-            features_obj = RawFeatures(img_shape)
-            features_set = FeaturesSet.create(fp, group, features_obj)
+            imgset = cls(fp)
+            imgset.add_feature_set('raw', img_shape=img_shape)  # FIXME rm?
 
-            return cls(fp)
+            return imgset
         except Exception:
             #Avoid an orphan open file in case of a problem
             if fp is not thefile:
@@ -231,6 +237,30 @@ class ImageSet:
         self.close()
         return False
 
+    def add_feature_set(self, name, params=None, **kwargs):
+        if name not in features_extractors:
+            raise ValueError("There is no features extractor named " + name)
+
+        feature_class = features_extractors[name]
+        instance_params = params if params is not None else kwargs
+        feature_obj = feature_class(**instance_params)
+        if feature_obj.name not in self.feature_sets:
+            logger.info("The features set already exists, NOT adding it")
+            feature_set = FeatureSet.create(self.fileh, self.root, feature_obj)
+            self.feature_sets[feature_obj.name] = feature_set
+
+            # Extract the features of existing images and append them
+            for img in self:
+                feature_set.append(img['pixels'])
+            feature_set.flush()
+
+        return self.feature_sets[feature_obj.name]
+
+    def _get_feature_set(self, feature_set):
+        if feature_set in self.feature_sets:
+            feature_set = self.feature_sets[feature_set]
+        return feature_set
+
     def _img_dict(self, name, time, pixels, img_id):
         return {
             'name': name,
@@ -238,11 +268,6 @@ class ImageSet:
             'pixels': pixels,
             'id': img_id
         }
-
-    def _get_feature_set(self, feature_set):
-        if feature_set in self.feature_sets:
-            feature_set = self.feature_sets[feature_set]
-        return feature_set
 
     def _img_from_row(self, row, feature_set=None):
         """
@@ -488,21 +513,10 @@ class ImageSet:
         self.img_size = pca_model.components_.shape[0]
 
         # Create the new FeatureSet
-        features_obj = PCAFeatures(pca_model)
-        if features_obj.name in self.feature_sets:
-            self.feature_sets[features_obj.name].root._f_remove(recursive=True)
-        pca_features = FeaturesSet.create(self.fileh, self.fileh.root.images,
-                                          features_obj)
-        self.feature_sets[features_obj.name] = pca_features
-
-        # Apply PCA transformation to all the images,
-        # and store the data to the new feature set
-        for img in self.table.iterrows():
-            # Ensure we get un-reduced data, in case this is not the first
-            # time the set is being reduced
-            img = self._img_from_row(img)
-            pca_features.append(img['pixels'])
-        pca_features.flush()
+        if self.is_reduced:
+            self.feature_sets['pca'].root._f_remove(recursive=True)
+            del self.feature_sets['pca']
+        self.add_feature_set('pca', pca_model=pca_model)
 
         self.is_reduced = True
 

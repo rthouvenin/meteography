@@ -27,22 +27,6 @@ PIXEL_TYPE = np.float32
 logger = logging.getLogger(__name__)
 
 
-def image_descriptor(img_size):
-    """
-    Create a pytables descriptor for the table of images.
-
-    Parameters
-    ----------
-    img_size : int
-        The number of pixels multiplied by the number of bands,
-        or the number of dimensions after reduction
-    """
-    return {
-        'name': tables.StringCol(256),
-        'time': tables.UIntCol(),
-    }
-
-
 def parse_timestamp(filename):
     """
     File name parser when the name without extension is a Unix Epoch
@@ -135,6 +119,12 @@ class FeaturesSet:
 
 
 class ImageSet:
+    # pytables descriptor for the table of images.
+    table_descriptor = {
+        'name': tables.StringCol(256),
+        'time': tables.UIntCol(),
+    }
+
     def __init__(self, fileh):
         """
         An ImageSet is a container for the complete list of webcam snapshots
@@ -199,9 +189,8 @@ class ImageSet:
         else:
             fp = thefile
         try:
-            desc = image_descriptor(np.prod(img_shape))
             group = fp.create_group('/', 'images')
-            table = fp.create_table(group, 'imgset', desc)
+            table = fp.create_table(group, 'imgset', cls.table_descriptor)
             table.attrs.img_shape = img_shape
             table.cols.time.create_csindex()
 

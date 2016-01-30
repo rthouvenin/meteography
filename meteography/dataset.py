@@ -40,7 +40,6 @@ def image_descriptor(img_size):
     return {
         'name': tables.StringCol(256),
         'time': tables.UIntCol(),
-        'pixels': tables.Col.from_sctype(PIXEL_TYPE, img_size)  # FIXME move to features
     }
 
 
@@ -117,6 +116,11 @@ class FeaturesSet:
     def append(self, pixels):
         data = self.features_obj.extract(pixels)
         self.root.features.append([data])
+        return data
+
+    def update(self, idx, pixels):
+        data = self.features_obj.extract(pixels)
+        self.root.features[idx, :] = data
         return data
 
     def __getitem__(self, idx):
@@ -322,30 +326,29 @@ class ImageSet:
 
     def _add_image(self, name, img_time, pixels, ret_features=None):
         img_id = self.table.nrows
-        row_pixels = pixels
         ret_pixels = pixels
-
-        # Apply reduction if required
-        if self.is_reduced:
-            row_pixels = self.pca.transform([pixels])[0]
+        ret_features = self._get_feature_set(ret_features)
 
         # If there is already an image for this time, update it
         existing = self.table.where('time == img_time')
         existing = next(existing, None)
         if existing is not None:
-            existing['pixels'] = row_pixels
-            existing.update()
-            return self._img_from_row(existing, ret_features)
+            img_id = existing.nrow
+            for feature_set in self.feature_sets.values():
+                appended = feature_set.update(img_id, pixels)
+                if feature_set is ret_features:
+                    ret_pixels = appended
+            return self._img_dict(name, img_time, ret_pixels, img_id)
 
-        # Otherwise, add it
+        # Otherwise, add it...
         else:
+            # ...to the table...
             row = self.table.row
             row['name'] = name
             row['time'] = img_time
-            row['pixels'] = row_pixels
             row.append()
 
-            ret_features = self._get_feature_set(ret_features)
+            # ...and each feature set
             for feature_set in self.feature_sets.values():
                 appended = feature_set.append(pixels)
                 if feature_set is ret_features:
@@ -522,7 +525,6 @@ class ImageSet:
             img = self._img_from_row(img)
             row['name'] = img['name']
             row['time'] = img['time']
-            row['pixels'] = self.pca.transform([img['pixels']])
             row.append()
             pca_features.append(img['pixels'])
         pca_table.flush()

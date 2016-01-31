@@ -199,7 +199,8 @@ class TestImageSet:
 @pytest.fixture(scope='class')
 def dataset(bigimageset):
     dataset = DataSet.create(bigimageset)
-    dataset.make_set('test', 5, 60, 120)
+    intervals = [60] * 4 + [120]
+    dataset.make_set('test', intervals)
     return dataset
 
 @pytest.fixture
@@ -230,7 +231,8 @@ class TestDataSet:
         "The list of data points should have the expected dimensions"
         interval, pred_time = 60, 120
         intervals = [60] * 4 + [pred_time]
-        data_points = list(dataset._find_examples(intervals))
+        feature_set = dataset.imgset.feature_sets.keys()[0]
+        data_points = list(dataset._find_examples(intervals, feature_set))
         # (max - future_time - (hist_len - 1)*interval - min) / step + 1
         # = (12000 - 120 - 4*60 - 6000) / 60 = 94
         assert(len(data_points) == 94)
@@ -242,12 +244,14 @@ class TestDataSet:
 
     def test_findexamples_empty(self, emptydataset):
         "An empty imageset should not be a problem"
-        data_points = list(emptydataset._find_examples([6, 6, 6]))
+        feature_set = emptydataset.imgset.feature_sets.keys()[0]
+        data_points = list(emptydataset._find_examples([6, 6, 6], feature_set))
         assert(len(data_points) == 0)
 
     def test_makeset_empty(self, emptydataset):
         "An empty imageset should not be a problem"
-        newset = emptydataset.make_set('empty')
+        intervals = [60] * 2 + [1800]
+        newset = emptydataset.make_set('empty', intervals)
         assert(len(newset.input) == 0)
 
     def test_makeinput_last(self, dataset):

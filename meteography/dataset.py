@@ -703,8 +703,7 @@ class DataSet:
             ex_set = fuzzy_node
         return ex_set
 
-    def init_set(self, name, hist_len=3, interval=600, future_time=1800,
-                 intervals=None, nb_ex=None):
+    def init_set(self, name, intervals, feature_set=None):
         """
         Create a new node in '/examples' of the given `name`, that will store
         the input and output of examples for the given parameters.
@@ -713,41 +712,27 @@ class DataSet:
         ----------
         name : string or None
             The name of the set (for future reference).
-        hist_len : int
-            The number of images to include in the input data.
-            Read only if intervals is None.
-        interval : int
-            The number of seconds between each input image.
-            Read only if intervals is None.
-        future_time : int
-            The number of seconds between the latest input image
-            and the target image. Read only if intervals is None.
         intervals : a sequence or None
             The amount of time between each image of an example. The last
             element is the amount of time between the last image of the input
             and the output image. If None, the sequence is created from the
             values of `hist_len`, `interval` and `future_time`.
-        nb_ex : int or None
-            The number of expected examples that this set will contain, or None
-            if unknown.
 
         Return
         ------
         pytables node : the created node.
         """
-        if intervals is None:
-            intervals = [interval] * (hist_len-1) + [future_time]
-        else:
-            hist_len = len(intervals)
-
+        if feature_set is None:
+            feature_set = self.imgset.feature_sets.keys()[0]  # FIXME
         self.delete_set(name)
         ex_group = self.fileh.root.examples
         ex_set = self.fileh.create_group(ex_group, name)
         ex_set._v_attrs.intervals = intervals
-        self._create_set_arrays(ex_set, 'img_refs', 'input', 'output', nb_ex)
+        ex_set._v_attrs.features = feature_set
+        self._create_set_arrays(ex_set, 'img_refs', 'input', 'output')
         return ex_set
 
-    def _create_set_arrays(self, ex_set, refs_name, in_name, out_name, nb_ex):
+    def _create_set_arrays(self, ex_set, refs_name, in_name, out_name):
         fh = self.fileh
         hist_len = len(ex_set._v_attrs.intervals)
         if self.is_reduced:
@@ -759,32 +744,30 @@ class DataSet:
 
         if refs_name is not None:
             fh.create_earray(ex_set, refs_name, atom=tables.IntAtom(),
-                             shape=(0, hist_len+1), expectedrows=nb_ex)
+                             shape=(0, hist_len+1))
         if in_name is not None:
             fh.create_earray(ex_set, in_name, atom=pixel_atom,
-                             shape=(0, nb_feat), expectedrows=nb_ex)
+                             shape=(0, nb_feat))
         if out_name is not None:
             fh.create_earray(ex_set, out_name, atom=pixel_atom,
-                             shape=(0, imgdim), expectedrows=nb_ex)
+                             shape=(0, imgdim))
         self.fileh.flush()
 
     def get_set(self, name):
         return self._nodify(name)
 
-    def make_set(self, name, hist_len=3, interval=600, future_time=1800,
-                 intervals=None):
+    def make_set(self, name, intervals, feature_set=None):
         """
         Constructs a set of training examples from all the available images.
         If a node with the same name already exists, it is overwritten.
         The meaning of the parameters is the same as for `init_set`
         """
         #Create pytables group and arrays
-        newset = self.init_set(name, hist_len, interval, future_time,
-                               intervals, None)
+        newset = self.init_set(name, intervals, feature_set)
         intervals = newset._v_attrs.intervals
 
         #Find the representations of the data points
-        examples = self._find_examples(intervals)
+        examples = self._find_examples(intervals, feature_set)
 
         img_refs = newset.img_refs
         input_data = newset.input
@@ -804,7 +787,6 @@ class DataSet:
         img_refs.flush()
         input_data.flush()
         output_data.flush()
-        self.history_len = hist_len
         return newset
 
     def delete_set(self, name):
@@ -817,7 +799,7 @@ class DataSet:
             self.fileh.remove_node(ex_group, name, recursive=True)
             self.fileh.flush()
 
-    def _find_examples(self, intervals):
+    def _find_examples(self, intervals, feature_set):
         """
         Generator of tuples (input_images, output_value) to be used for
         training or validation.
@@ -829,11 +811,11 @@ class DataSet:
         """
         assert all(intervals)
         for i, img in enumerate(self.imgset):
-            example = self._find_example(img, intervals)
+            example = self._find_example(img, intervals, feature_set)
             if example is not None:
                 yield example
 
-    def _find_example(self, img, intervals):
+    def _find_example(self, img, intervals, feature_set):
         """
         Try to find a single example that has `img` as a target
 
@@ -854,7 +836,7 @@ class DataSet:
         """
         img = self._dictify(img)
         #Search for input images that match the target
-        images = self._find_sequence(img, intervals)
+        images = self._find_sequence(img, intervals, feature_set)
 
         #If we could find all of them, return an example
         hist_len = len(intervals)
@@ -864,7 +846,7 @@ class DataSet:
             return inputs, target
         return None
 
-    def _find_sequence(self, img, intervals):
+    def _find_sequence(self, img, intervals, feature_set):
         """
         Find a sequence of images ending with `img` and matching `intervals`
         """
@@ -872,7 +854,6 @@ class DataSet:
         images = [img]
         for j, interval in enumerate(reversed(intervals)):
             prev_time = images[j]['time']
-            feature_set = 'pca' if self.is_reduced else None
             img_j = self.imgset.find_closest(prev_time, interval, feature_set)
             if img_j:
                 images.append(img_j)
@@ -904,9 +885,11 @@ class DataSet:
         img = self._dictify(fuzzy_img)
         ex_set = self._nodify(ex_set)
         intervals = ex_set._v_attrs.intervals[:-1]
+        feature_set = ex_set._v_attrs.features
         if target_time is None:
             target_time = ex_set._v_attrs.intervals[-1]
-        images = self._find_sequence(img, intervals)
+
+        images = self._find_sequence(img, intervals, feature_set)
         if len(images) == len(intervals) + 1:
             prediction_time = target_time + images[-1]['time']
             return self._get_input_data(images, prediction_time)
@@ -950,7 +933,8 @@ class DataSet:
 
         for ex_set in ex_sets:
             intervals = ex_set._v_attrs.intervals
-            example = self._find_example(img, intervals)
+            feature_set = ex_set._v_attrs.features
+            example = self._find_example(img, intervals, feature_set)
 
             if example is not None:
                 imgs_in, img_out = example
@@ -975,16 +959,16 @@ class DataSet:
         self.imgset.reduce_dim()
         for ex_set in self.fileh.root.examples:
             logger.info("Applying the reduction to set %s", ex_set._v_name)
+            ex_set._v_attrs.features = 'pca'
             self._recompute_set(ex_set)
 
     def _recompute_set(self, ex_set):
         """
         Re-create the input and output arrays of `ex_set`.
         """
-        nb_ex = ex_set.img_refs._v_expectedrows
         hist_len = len(ex_set._v_attrs.intervals)
-        feature_set = 'pca' if self.is_reduced else None
-        self._create_set_arrays(ex_set, None, 'newinput', 'newoutput', nb_ex)
+        feature_set = ex_set._v_attrs.features
+        self._create_set_arrays(ex_set, None, 'newinput', 'newoutput')
         for refs_row in ex_set.img_refs:
             pixels_row = self.imgset.get_pixels_at(refs_row, feature_set)
             newfeatures = pixels_row[:-1].flatten()

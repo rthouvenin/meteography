@@ -51,34 +51,92 @@ def parse_path(filename):
     return int(time.mktime(date.timetuple()))
 
 
-class RawFeatures:
+class FeaturesExtractor(object):
+    """
+    Base class of features extractors
+
+    Attributes
+    ----------
+    name : str
+        An identifier of the extractor and its parameters
+    atom :
+        The Pytable atom used to store a single feature
+    nb_features :
+        The number of features that this extractor generates
+    """
+    def __init__(self, name, atom, nb_features):
+        self.name = name
+        self.atom = atom
+        self.nb_features = nb_features
+
+
+class RawFeatures(FeaturesExtractor):
     def __init__(self, img_shape):
+        """
+        Features extractor that simply resize the image and extracts the pixels
+
+        Init parameters
+        ---------------
+        img_shape : tuple
+            A 2-tuple (for greyscale images) or 3-tuple (for color images)
+            that is the target shape to resize to: (height, width, nb_bands)
+        """
         self.img_shape = img_shape
-        self.name = 'raw%dx%d' % (img_shape[1], img_shape[0])
-        self.atom = tables.Atom.from_sctype(PIXEL_TYPE)
-        self.nb_features = np.prod(img_shape)
+        name = 'raw%dx%d' % (img_shape[1], img_shape[0])
+        atom = tables.Atom.from_sctype(PIXEL_TYPE)
+        nb_features = np.prod(img_shape)
+        super(RawFeatures, self).__init__(name, atom, nb_features)
 
     def extract(self, pixels):
+        #FIXME implement resize
         return pixels
 
 
-class PCAFeatures:
+class PCAFeatures(FeaturesExtractor):
     def __init__(self, pca_model):
-        self.name = 'pca'
-        self.atom = tables.Float32Atom()
-        self.nb_features = pca_model.components_.shape[0]
+        """
+        Features extractor that computes the PCA components of the images.
+        The name is a constant: it does not support multiple instances with
+        different PCA parameters.
+
+        Init parameters
+        ---------------
+        pca_model : sklearn.decomposition.PCA instance
+            The model to use to compute PCA components
+        """
         self.pca = pca_model
+        name = 'pca'
+        atom = tables.Float32Atom()
+        nb_features = pca_model.components_.shape[0]
+        super(PCAFeatures, self).__init__(name, atom, nb_features)
 
     def extract(self, pixels):
+        #FIXME support multiple images
         return self.pca.transform([pixels])[0]
 
     @classmethod
     def create(cls, data, n_dims=.99):
+        """
+        Computes the PCA components from the given data and return a
+        PCAFeatures instance based on these components
+
+        Parameters
+        ----------
+        data : numpy array
+            The data to use to compute the PCA components
+        n_dims : number or None
+            Number of components to keep.
+            If n_components is not set all components are kept.
+            If 0 < n_components < 1, select the number of components such that
+            the amount of variance that needs to be explained is greater than
+            the percentage specified by n_components.
+        """
         #FIXME: choose an algo
         pca_model = PCA(n_components=n_dims).fit(data)
         ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
         return cls(pca_model)
 
+# Registry to instantiate features extractors from a name
 features_extractors = {
     'raw': RawFeatures,
     'pca': PCAFeatures,
@@ -86,13 +144,35 @@ features_extractors = {
 
 
 class FeatureSet:
+    """
+    Represents a dataset containing the features of a set of images.
+    It is a wrapper of a Pytables group where the data is stored.
+
+    Attributes
+    ----------
+    nb_features : int
+        the number of features stored for each image
+    name : str
+        the name of this set, unique in a ImageSet
+    """
     def __init__(self, root_group, features_obj=None):
+        """
+        Open a FeatureSet from an existing Pytables group.
+
+        Init parameters
+        ---------------
+        root_group : Pytables group
+        features_obj : a FeaturesExtractor object or None (optional)
+            The extractor to use to add data to this feature set.
+            If None, it is read from the data stored in the Pytables group
+        """
         self.root = root_group
         if features_obj is None:
             fn = filenode.open_node(self.root.model, 'r')
             self.features_obj = pickle.load(fn)
             fn.close()
         else:
+            #FIXME check the file node does not exist already and create it
             self.features_obj = features_obj
 
     @property
@@ -104,13 +184,26 @@ class FeatureSet:
         return self.features_obj.name
 
     @classmethod
-    def create(cls, tables_file, root, features_obj):
+    def create(cls, tables_file, where, features_obj):
+        """
+        Initializes a Pytables group to hold a FeatureSet and return an
+        associated instance.
+
+        Parameters
+        ----------
+        tables_files : Pytables file
+            An already opened (writable) Pytable file
+        where : Where to create the Pytables group that will hold the data
+        features_obj : FeatureExtractor object
+            The extractor that will be used to extract the features to the set
+        """
         group_name = features_obj.name
-        group = tables_file.create_group(root, group_name)
+        group = tables_file.create_group(where, group_name)
 
         tables_file.create_earray(group, 'features', features_obj.atom,
                                   shape=(0, features_obj.nb_features))
 
+        # FIXME move to FeatureSet constructor
         fn = filenode.new_node(tables_file, where=group, name='model')
         pickle.dump(features_obj, fn, pickle.HIGHEST_PROTOCOL)
         fn.close()
@@ -118,29 +211,47 @@ class FeatureSet:
         return cls(group, features_obj)
 
     def remove(self):
+        "Delete the associated Pytables group"
         self.root._f_remove(recursive=True)
 
     def append(self, pixels):
+        "Extract features from the given data and add them to the set"
         data = self.features_obj.extract(pixels)
         self.root.features.append([data])
         return data
 
     def update(self, idx, pixels):
+        "Extract features from the given data and update the rows at `idx`"
         data = self.features_obj.extract(pixels)
         self.root.features[idx, :] = data
         return data
 
     def __getitem__(self, idx):
+        "Return the data at row(s) `idx`"
         return self.root.features[idx, :]
 
     def __len__(self):
         return self.root.features.shape[0]
 
     def flush(self):
+        "Flush on disk any data that is still in buffers"
         return self.root.features.flush()
 
 
 class ImageSet:
+    """
+    An ImageSet is a container for the complete list of webcam snapshots
+    that can be used to train the learner. It is backed by a HDF5 file.
+
+    Attributes
+    ----------
+    img_shape : tuple
+        The shape of the images: (height, width[, bands])
+    is_grey : bool
+        True if the images are processed as greyscale images
+    feature_sets : dictionary
+        A mapping name -> FeatureSet of all the feature sets stored on file
+    """
     # pytables descriptor for the table of images.
     table_descriptor = {
         'name': tables.StringCol(256),
@@ -149,22 +260,13 @@ class ImageSet:
 
     def __init__(self, fileh):
         """
-        An ImageSet is a container for the complete list of webcam snapshots
-        that can be used to train the learner. It is backed by a HDF5 file.
-
-        Parameters
+        Instantiate an ImageSet from an existing Pytables file
+        Init parameters
         ----------
         fileh : pytables file descriptor
             An opened file descriptor pointing to a HDF5 file. The file must
             already contain the required nodes, they can be created with the
-            function `create_imagegroup`.
-
-        Attributes
-        ----------
-        img_shape : tuple
-            The shape of the images: (height, width[, bands])
-        is_grey : bool
-            True if the images are processed as greyscale images
+            method `create`.
         """
         self.fileh = fileh
         self.root = fileh.root.images
@@ -194,6 +296,10 @@ class ImageSet:
             overwritten.
         img_shape : tuple
             The shape of the images: (height, width[, bands])
+
+        Return
+        ------
+        ImageSet : The returned instance can be used in a context manager.
         """
         if not hasattr(thefile, 'create_table'):
             fp = tables.open_file(thefile, mode='w')
@@ -219,7 +325,8 @@ class ImageSet:
     @classmethod
     def open(cls, thefile):
         """
-        Instantiate a ImageSet backed by `thefile`.
+        Instantiate a ImageSet backed by `thefile`. The returned instance
+        can be used in a context manager.
 
         Parameters
         ----------
@@ -234,6 +341,7 @@ class ImageSet:
         return cls(fp)
 
     def close(self):
+        "Close the underlying pytables file."
         return self.fileh.close()
 
     def __enter__(self):
@@ -244,9 +352,30 @@ class ImageSet:
         return False
 
     def add_feature_set(self, extractor=None, name=None, params=None, **kwargs):
+        """
+        Create a new FeatureSet in this ImageSet.
+        If one with the same extractor already exist, it is not created and
+        no error is raised.
+        Otherwise, the features of all the images of this set are extracted and
+        added to the feature set.
+
+        Parameters
+        ----------
+        extractor : FeatureExtractor object (optional)
+            The extractor to associated to the feature set. If not provided,
+            one is created from name and params or kwargs
+        name : str (optional)
+            Read only when extractor is not provided, it is the name of the
+            extractor in the class registry.
+        params : list (optional)
+            The list of parameters to use to instantiate the extractor. If not
+            provided, kwargs is used
+        **kwargs : the arguments to use to instantiate the extractor
+        """
         if extractor is None:
             if name not in features_extractors:
                 raise ValueError("No features extractor named %s" % name)
+            #FIXME use directly class instead of name
             feature_class = features_extractors[name]
             instance_params = params if params is not None else kwargs
             extractor = feature_class(**instance_params)
@@ -263,16 +392,18 @@ class ImageSet:
 
         return self.feature_sets[extractor.name]
 
-    def get_feature_set(self, feature_set):
-        if feature_set not in self.feature_sets:
-            raise ValueError("There is no features set named %s" % feature_set)
-        return self.feature_sets[feature_set]
+    def get_feature_set(self, set_name):
+        "Return the FeatureSet that has the name given by `set_name`"
+        if set_name not in self.feature_sets:
+            raise ValueError("There is no features set named %s" % set_name)
+        return self.feature_sets[set_name]
 
-    def remove_feature_set(self, feature_set):
-        if feature_set not in self.feature_sets:
-            raise ValueError("There is no features set named %s" % feature_set)
-        self.feature_sets[feature_set].remove()
-        del self.feature_sets[feature_set]
+    def remove_feature_set(self, set_name):
+        "Removes the FeatureSet that has the name given by `set_name`"
+        if set_name not in self.feature_sets:
+            raise ValueError("There is no features set named %s" % set_name)
+        self.feature_sets[set_name].remove()
+        del self.feature_sets[set_name]
 
     def _img_dict(self, name, time, pixels, img_id):
         return {
@@ -283,11 +414,7 @@ class ImageSet:
         }
 
     def _img_from_row(self, row, feature_set=None):
-        """
-        Create from a row a dictionary with the details of the image in that
-        row. If `ret_reduced` is True and the ImageSet was reduced, the key
-        'pixels' will contain the PCA-transformed data.
-        """
+        "Create a dictionary with the details of the image at the given `row`"
         if feature_set is None:
             pixels = self.pixels_from_file(row['name'])
         else:
@@ -300,8 +427,8 @@ class ImageSet:
     def get_image(self, t, feature_set=None):
         """
         Returns as a dictionary the details of the image taken at time `t`.
-        If `ret_reduced` is True and the ImageSet was reduced, the key 'pixels'
-        will contain the PCA-transformed data.
+        The 'pixels' item will contain the data stored in `feature_set`.
+        If `feature_set` is not provided, gives instead the raw pixels.
         """
         rows = self.table.where('time == t')
         try:
@@ -322,9 +449,9 @@ class ImageSet:
         ----------
         idx : integral number or sequence of integral numbers
             The indices of the images
-        ret_reduced : bool
-            If True and the ImageSet was reduced, the PCA-transformed data
-            is returned
+        feature_set : str or None (optional)
+            The name of the FeatureSet to get the data from. If not provided,
+            return the raw pixels of the image(s)
         """
         if feature_set is None:
             source = self._realpixels
@@ -443,9 +570,9 @@ class ImageSet:
         name_parser : callable
             A function that takes an absolute filename as argument and
             returns the timestamp of when the photo was taken
-        ret_reduced : bool
-            Whether the returned image should come with reduced pixels
-            (if available)
+        feature_set : str or None (optional)
+            The name of the FeatureSet to get the data from. If not provided,
+            return the raw pixels of the image(s)
 
         Return
         ------
@@ -525,9 +652,9 @@ class ImageSet:
         ----------
         start : int
         interval : int
-        ret_reduced : bool
-            Whether the returned image should come with reduced pixels
-            (if available)
+        feature_set : str or None (optional)
+            The name of the FeatureSet to get the data from. If not provided,
+            return the raw pixels of the image(s)
 
         Return
         ------
@@ -571,6 +698,8 @@ class DataSet:
 
         Parameters
         ----------
+        fileh : pytables file descriptor
+            An opened file descriptor pointing to a HDF5 file.
         imageset : ImageSet
             The ImageSet containing all the source images.
         """
@@ -586,6 +715,7 @@ class DataSet:
         """
         Create in `thefile` a pytables node 'examples' to be used for datasets.
         Create a DataSet backed by this file and with `imgset` as image source.
+        The returned instance can be used in a context manager.
 
         Parameters
         ----------
@@ -616,7 +746,8 @@ class DataSet:
     @classmethod
     def open(cls, imageset, thefile=None):
         """
-        Instantiate a DataSet backed by `thefile` and imageset.
+        Instantiate a DataSet backed by `thefile` and imageset. The returned
+        instance can be used in a context manager.
 
         Parameters
         ----------
@@ -639,6 +770,7 @@ class DataSet:
         return cls(fp, imageset)
 
     def close(self):
+        "Close the underlying file(s), including the ImageSet"
         self.imgset.close()
         return self.fileh.close()
 
@@ -683,6 +815,8 @@ class DataSet:
             element is the amount of time between the last image of the input
             and the output image. If None, the sequence is created from the
             values of `hist_len`, `interval` and `future_time`.
+        feature_set : str
+            The name of the FeatureSet used as a data source for the examples
 
         Return
         ------
@@ -790,6 +924,8 @@ class DataSet:
             such as returned by `ImageSet.get_image`
         intervals: sequence
             c.f. `init_set`
+        feature_set : str
+            c.f. `init_set`
 
         Return
         ------
@@ -889,8 +1025,9 @@ class DataSet:
         ----------
         imgfile : str
             Filename of the image to add
-        setname : str
-            Name of the dataset where the example should be added
+        setname : str (optional)
+            Name of the dataset where the example should be added. If not
+            provided, the image is added to all the sets.
         """
         if ex_set is not None:
             ex_sets = [self._nodify(ex_set)]
@@ -979,7 +1116,7 @@ class DataSet:
 
     def repack(self):
         """
-        Recreate the HDF5 backing this dataset and underlying imageset.
+        Recreate the HDF5 file backing this dataset and underlying imageset.
         As HDF5 does not free the space after removing nodes from a file, it is
         necessary to re-create the entire file if one wants to reclaim the
         space, which is of course an expensive operation on large files.

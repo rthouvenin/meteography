@@ -6,8 +6,7 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from meteography.dataset import DataSet
-from meteography.dataset import ImageSet
+from meteography.dataset import PCAFeatures, ImageSet, DataSet
 
 IMG_SIZE = 20
 
@@ -89,17 +88,19 @@ class TestImageSet:
         pix2 = imageset.get_pixels_at(img1['id'])
         assert(np.allclose(img1['pixels'], pix2))
 
-    def test_pixelsat_seq(self, imageset):
+    def test_pixelsat_seq(self, imageset, feature_set=None):
         "Read pixels from a tuple of indices"
-        img1 = imageset.get_image(42)
-        pixels = imageset.get_pixels_at((img1['id'], 0))
+        img1 = imageset.get_image(42, feature_set)
+        pixels = imageset.get_pixels_at((img1['id'], 0), feature_set)
         assert(np.allclose(img1['pixels'], pixels[0]))
         assert(not np.allclose(pixels[1], pixels[0]))
 
-    def test_pixelsat_seq_reduced(self, imageset):
+    def test_pixelsat_seq_pca(self, imageset):
         "Read reduced pixels from a tuple of indices"
-        imageset.reduce_dim()
-        self.test_pixelsat_seq(imageset)
+        sample = imageset.sample()
+        extractor = PCAFeatures.create(sample)
+        fset = imageset.add_feature_set(extractor)
+        self.test_pixelsat_seq(imageset, fset.name)
 
     def test_addfromfile(self, imageset, imgfile):
         "Adding a file should increase the length of the set"
@@ -116,12 +117,15 @@ class TestImageSet:
         assert(len(imageset) == prev_len)
         assert(img['id'] == prev_len-1)
 
-    def test_addfromfile_reduced(self, bigimageset_rw, imgfile):
+    def test_addfromfile_pca(self, bigimageset_rw, imgfile):
         "Adding a file should still work after reducing the set"
-        bigimageset_rw.reduce_dim()
+        sample = bigimageset_rw.sample()
+        extractor = PCAFeatures.create(sample)
+        bigimageset_rw.add_feature_set(extractor)
         prev_len = len(bigimageset_rw)
         bigimageset_rw.add_from_file(imgfile)
         assert(len(bigimageset_rw) == prev_len+1)
+        assert(len(bigimageset_rw.feature_sets['pca']) == prev_len+1)
 
     def test_closest_last_inrange(self, imageset):
         "The target is past the last element, the last element is acceptable"
@@ -154,18 +158,10 @@ class TestImageSet:
     def test_reduce_fewimg(self, bigimageset_rw):
         "More pixels than images should lead to less components than images"
         prev_length = len(bigimageset_rw)
-        bigimageset_rw.reduce_dim()
-        img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
-        assert(len(bigimageset_rw) == prev_length)
-        assert('pca' in bigimageset_rw.feature_sets)
-        assert(len(img0) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
-
-    def test_reduce_twice(self, bigimageset_rw):
-        "Reducing twice the same set should not cause any problem"
-        prev_length = len(bigimageset_rw)
-        bigimageset_rw.reduce_dim()
-        bigimageset_rw.reduce_dim()
-        img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
+        sample = bigimageset_rw.sample()
+        extractor = PCAFeatures.create(sample)
+        bigimageset_rw.add_feature_set(extractor)
+        img0 = bigimageset_rw.get_pixels_at(0, 'pca')  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
         assert('pca' in bigimageset_rw.feature_sets)
         assert(len(img0) <= len(bigimageset_rw) < IMG_SIZE*IMG_SIZE)
@@ -174,24 +170,27 @@ class TestImageSet:
         "More images than sample size"
         prev_length = len(bigimageset_rw)
         sample_size = prev_length / 2
-        bigimageset_rw.reduce_dim(sample_size, None)
-        img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
+        sample = bigimageset_rw.sample(sample_size)
+        extractor = PCAFeatures.create(sample, None)
+        bigimageset_rw.add_feature_set(extractor)
+        img0 = bigimageset_rw.get_pixels_at(0, 'pca')  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
         assert('pca' in bigimageset_rw.feature_sets)
         assert(len(img0) == sample_size)
 
     def test_reduce_manyimg(self, bigimageset_rw, tmpdir_factory):
         """More images than pixels but less than sample size
-        won't reduce the dimensionality, even after a first reduction"""
-        bigimageset_rw.reduce_dim()
+        won't reduce the dimensionality"""
         images = [make_filedict(t, True) for t in range(6000, 30000, 60)]
         for img in images:
             img['name'] = imgfile(tmpdir_factory, img['img_time'])
             bigimageset_rw._add_image(**img)
         bigimageset_rw.fileh.flush()
         prev_length = len(bigimageset_rw)
-        bigimageset_rw.reduce_dim(450, None)
-        img0 = bigimageset_rw.get_pixels_at(0, 'pca')[0]  # FIXME pca is hardcoded
+        sample = bigimageset_rw.sample(450)
+        extractor = PCAFeatures.create(sample, None)
+        bigimageset_rw.add_feature_set(extractor)
+        img0 = bigimageset_rw.get_pixels_at(0, 'pca')  # FIXME pca is hardcoded
         assert(len(bigimageset_rw) == prev_length)
         assert(len(img0) == IMG_SIZE*IMG_SIZE)
 

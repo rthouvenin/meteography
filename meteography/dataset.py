@@ -73,7 +73,7 @@ class PCAFeatures:
         return self.pca.transform([pixels])[0]
 
     @classmethod
-    def create(cls, data, n_dims):
+    def create(cls, data, n_dims=.99):
         #FIXME: choose an algo
         pca_model = PCA(n_components=n_dims).fit(data)
         ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
@@ -98,6 +98,10 @@ class FeatureSet:
     @property
     def nb_features(self):
         return self.features_obj.nb_features
+
+    @property
+    def name(self):
+        return self.features_obj.name
 
     @classmethod
     def create(cls, tables_file, root, features_obj):
@@ -129,6 +133,9 @@ class FeatureSet:
     def __getitem__(self, idx):
         return self.root.features[idx, :]
 
+    def __len__(self):
+        return self.root.features.shape[0]
+
     def flush(self):
         return self.root.features.flush()
 
@@ -156,11 +163,6 @@ class ImageSet:
         ----------
         img_shape : tuple
             The shape of the images: (height, width[, bands])
-        img_size : int
-            The number of pixels in a single image. When the dimension is not
-            reduced (see `reduce_dim`), this is the product of width, height
-            and number of bands.
-            When reduced, this is the reduced dimension.
         is_grey : bool
             True if the images are processed as greyscale images
         """
@@ -176,13 +178,6 @@ class ImageSet:
             node_name = node._v_name
             if node_name not in ['imgset']:
                 self.feature_sets[node_name] = FeatureSet(node)
-
-        if 'pca' in self.feature_sets:
-            self.is_reduced = True
-            self.img_size = self.feature_sets['pca'].nb_features
-        else:
-            self.is_reduced = False
-            self.img_size = np.prod(self.img_shape)
 
     @classmethod
     def create(cls, thefile, img_shape):
@@ -340,9 +335,10 @@ class ImageSet:
         #numpy scalars also have a __getitem__ ...
         if hasattr(idx, '__getitem__') and not np.isscalar(idx):
             result = source(idx)
+            return result
         else:
             result = source((idx, ))
-        return result
+            return result[0]
 
     def __iter__(self):
         """
@@ -488,7 +484,7 @@ class ImageSet:
                     logger.warn("Ignoring file %s: %s" % (fullname, e))
         self.table.flush()
 
-    def sample(self, sample_size):
+    def sample(self, sample_size=1000):
         """
         Pick randomly `sample_size` images and return their pixels as a single
         ndarray of shape (`sample_size`, `img_size`).
@@ -518,32 +514,6 @@ class ImageSet:
             index = random.sample(xrange(self.table.nrows), sample_size)
             sample = self.get_pixels_at(index)
         return sample
-
-    def reduce_dim(self, sample_size=1000, n_dims=.99):
-        """
-        Apply PCA transformation to each image of the set.
-
-        Parameters
-        ----------
-        sample_size : number or None
-            Indicates how many images should be used to compute the PCA
-            reduction. If 0 or None, all the images of the set are used. If it
-            is a float in ]0, 1], it indicates the proportion of images to be
-            used. If greater than 1, it indicates the maximum number of images
-            to use.
-        """
-        sample = self.sample(sample_size)
-
-        # Compute PCA components from the sample.
-        extractor = PCAFeatures.create(sample, n_dims)
-        self.img_size = extractor.nb_features
-
-        # Create the new FeatureSet
-        if self.is_reduced:
-            self.remove_feature_set('pca')
-        self.add_feature_set(extractor)
-
-        self.is_reduced = True
 
     def find_closest(self, start, interval, feature_set=None):
         """
@@ -610,10 +580,6 @@ class DataSet:
         self.fileh = fileh
         self.imgset = imageset
         self.img_shape = imageset.img_shape
-
-    @property
-    def is_reduced(self):
-        return self.imgset.is_reduced
 
     @classmethod
     def create(cls, imgset, thefile=None):
@@ -735,10 +701,8 @@ class DataSet:
     def _create_set_arrays(self, ex_set, refs_name, in_name, out_name):
         fh = self.fileh
         hist_len = len(ex_set._v_attrs.intervals)
-        if self.is_reduced:
-            imgdim = self.imgset.img_size
-        else:
-            imgdim = np.prod(self.img_shape)
+        fset = self.imgset.get_feature_set(ex_set._v_attrs.features)
+        imgdim = fset.nb_features
         nb_feat = (imgdim+1) * hist_len
         pixel_atom = tables.Atom.from_sctype(PIXEL_TYPE)
 
@@ -764,7 +728,7 @@ class DataSet:
         """
         #Create pytables group and arrays
         newset = self.init_set(name, intervals, feature_set)
-        intervals = newset._v_attrs.intervals
+        feature_set = newset._v_attrs.features
 
         #Find the representations of the data points
         examples = self._find_examples(intervals, feature_set)
@@ -834,7 +798,7 @@ class DataSet:
             to be used as the input of an example, and output_value is the
             target (expected prediction) of the example
         """
-        img = self._dictify(img)
+        img = self._dictify(img)  # FIXME will be re-done by find_sequence
         #Search for input images that match the target
         images = self._find_sequence(img, intervals, feature_set)
 
@@ -851,6 +815,11 @@ class DataSet:
         Find a sequence of images ending with `img` and matching `intervals`
         """
         assert img is not None
+
+        # Get features for this feature_set
+        img = dict(img)  # Don't modify argument
+        img['pixels'] = self.imgset.get_pixels_at(img['id'], feature_set)
+
         images = [img]
         for j, interval in enumerate(reversed(intervals)):
             prev_time = images[j]['time']
@@ -923,13 +892,12 @@ class DataSet:
         setname : str
             Name of the dataset where the example should be added
         """
-        feature_set = 'pca' if self.is_reduced else None
-        img = self.imgset.add_from_file(imgfile, ret_features=feature_set)
-
         if ex_set is not None:
             ex_sets = [self._nodify(ex_set)]
         else:
             ex_sets = iter(self.fileh.root.examples)
+
+        img = self.imgset.add_from_file(imgfile)  # FIXME ret_features = False
 
         for ex_set in ex_sets:
             intervals = ex_set._v_attrs.intervals
@@ -956,7 +924,16 @@ class DataSet:
         Note that re-computing the reduction after some images were added may
         INCREASE the dimensionality (but would improve the sampling)
         """
-        self.imgset.reduce_dim()
+        # Compute PCA components from a sample.
+        sample = self.imgset.sample()
+        extractor = PCAFeatures.create(sample)
+
+        # Create the new FeatureSet
+        if 'pca' in self.imgset.feature_sets:
+            self.imgset.remove_feature_set('pca')
+        self.imgset.add_feature_set(extractor)
+
+        # Recompute all the example sets
         for ex_set in self.fileh.root.examples:
             logger.info("Applying the reduction to set %s", ex_set._v_name)
             ex_set._v_attrs.features = 'pca'

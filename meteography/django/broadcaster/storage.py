@@ -147,8 +147,6 @@ class WebcamStorage:
             # FIXME give directly PIL reference
             abspath = self.fs.path(filepath)
             img_dict = dataset.add_image(abspath)
-            if dataset.is_reduced:
-                img_dict['pixels'] = dataset.imgset.pixels_from_file(abspath)
             return img_dict
 
     def add_examples_set(self, params):

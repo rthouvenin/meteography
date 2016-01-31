@@ -106,6 +106,9 @@ class FeatureSet:
 
         return cls(group, features_obj)
 
+    def remove(self):
+        self.root._f_remove(recursive=True)
+
     def append(self, pixels):
         data = self.features_obj.extract(pixels)
         self.root.features.append([data])
@@ -256,10 +259,16 @@ class ImageSet:
 
         return self.feature_sets[feature_obj.name]
 
-    def _get_feature_set(self, feature_set):
-        if feature_set in self.feature_sets:
-            feature_set = self.feature_sets[feature_set]
-        return feature_set
+    def get_feature_set(self, feature_set):
+        if feature_set not in self.feature_sets:
+            raise ValueError("There is no features set named %s" % feature_set)
+        return self.feature_sets[feature_set]
+
+    def remove_feature_set(self, feature_set):
+        if feature_set not in self.feature_sets:
+            raise ValueError("There is no features set named %s" % feature_set)
+        self.feature_sets[feature_set].remove()
+        del self.feature_sets[feature_set]
 
     def _img_dict(self, name, time, pixels, img_id):
         return {
@@ -275,12 +284,10 @@ class ImageSet:
         row. If `ret_reduced` is True and the ImageSet was reduced, the key
         'pixels' will contain the PCA-transformed data.
         """
-
         if feature_set is None:
             pixels = self.pixels_from_file(row['name'])
         else:
-            print(feature_set)
-            feature_set = self._get_feature_set(feature_set)
+            feature_set = self.get_feature_set(feature_set)
             pixels = feature_set[row.nrow]
 
         img = self._img_dict(row['name'], row['time'], pixels, row.nrow)
@@ -318,7 +325,7 @@ class ImageSet:
         if feature_set is None:
             source = self._realpixels
         else:
-            feature_set = self._get_feature_set(feature_set)
+            feature_set = self.get_feature_set(feature_set)
             source = lambda i: feature_set[i]
 
         #numpy scalars also have a __getitem__ ...
@@ -343,7 +350,8 @@ class ImageSet:
     def _add_image(self, name, img_time, pixels, ret_features=None):
         img_id = self.table.nrows
         ret_pixels = pixels
-        ret_features = self._get_feature_set(ret_features)
+        if ret_features is not None:
+            ret_features = self.get_feature_set(ret_features)
 
         # If there is already an image for this time, update it
         existing = self.table.where('time == img_time')
@@ -514,8 +522,7 @@ class ImageSet:
 
         # Create the new FeatureSet
         if self.is_reduced:
-            self.feature_sets['pca'].root._f_remove(recursive=True)
-            del self.feature_sets['pca']
+            self.remove_feature_set('pca')
         self.add_feature_set('pca', pca_model=pca_model)
 
         self.is_reduced = True

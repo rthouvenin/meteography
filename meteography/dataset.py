@@ -72,6 +72,13 @@ class PCAFeatures:
     def extract(self, pixels):
         return self.pca.transform([pixels])[0]
 
+    @classmethod
+    def create(cls, data, n_dims):
+        #FIXME: choose an algo
+        pca_model = PCA(n_components=n_dims).fit(data)
+        ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
+        return cls(pca_model)
+
 features_extractors = {
     'raw': RawFeatures,
     'pca': PCAFeatures,
@@ -204,7 +211,8 @@ class ImageSet:
             table.cols.time.create_csindex()
 
             imgset = cls(fp)
-            imgset.add_feature_set('raw', img_shape=img_shape)  # FIXME rm?
+            extractor = RawFeatures(img_shape)
+            imgset.add_feature_set(extractor)  # FIXME rm?
 
             return imgset
         except Exception:
@@ -240,24 +248,25 @@ class ImageSet:
         self.close()
         return False
 
-    def add_feature_set(self, name, params=None, **kwargs):
-        if name not in features_extractors:
-            raise ValueError("There is no features extractor named " + name)
+    def add_feature_set(self, extractor=None, name=None, params=None, **kwargs):
+        if extractor is None:
+            if name not in features_extractors:
+                raise ValueError("No features extractor named %s" % name)
+            feature_class = features_extractors[name]
+            instance_params = params if params is not None else kwargs
+            extractor = feature_class(**instance_params)
 
-        feature_class = features_extractors[name]
-        instance_params = params if params is not None else kwargs
-        feature_obj = feature_class(**instance_params)
-        if feature_obj.name not in self.feature_sets:
+        if extractor.name not in self.feature_sets:
             logger.info("The features set already exists, NOT adding it")
-            feature_set = FeatureSet.create(self.fileh, self.root, feature_obj)
-            self.feature_sets[feature_obj.name] = feature_set
+            feature_set = FeatureSet.create(self.fileh, self.root, extractor)
+            self.feature_sets[extractor.name] = feature_set
 
             # Extract the features of existing images and append them
             for img in self:
                 feature_set.append(img['pixels'])
             feature_set.flush()
 
-        return self.feature_sets[feature_obj.name]
+        return self.feature_sets[extractor.name]
 
     def get_feature_set(self, feature_set):
         if feature_set not in self.feature_sets:
@@ -479,12 +488,31 @@ class ImageSet:
                     logger.warn("Ignoring file %s: %s" % (fullname, e))
         self.table.flush()
 
-    def _sample(self, sample_size):
+    def sample(self, sample_size):
         """
         Pick randomly `sample_size` images and return their pixels as a single
         ndarray of shape (`sample_size`, `img_size`).
+
+        Parameters
+        ----------
+        sample_size : number or None
+            Indicates how many images should be used to compute the PCA
+            reduction. If 0 or None, all the images of the set are used. If it
+            is a float in ]0, 1], it indicates the proportion of images to be
+            used. If greater than 1, it indicates the maximum number of images
+            to use.
         """
-        if sample_size == self.table.nrows:
+        # Compute the sample size and create it
+        nb_images = self.table.nrows
+        if not sample_size:
+            sample_size = nb_images
+        elif 0 < sample_size <= 1:
+            sample_size = int(nb_images * sample_size)
+        else:
+            sample_size = min(nb_images, sample_size)
+
+        # Create the sample
+        if sample_size == nb_images:
             sample = self.get_pixels_at(range(len(self)))
         else:
             index = random.sample(xrange(self.table.nrows), sample_size)
@@ -504,26 +532,16 @@ class ImageSet:
             used. If greater than 1, it indicates the maximum number of images
             to use.
         """
-        # Compute the sample size and create it
-        nb_images = self.table.nrows
-        if not sample_size:
-            sample_size = nb_images
-        elif 0 < sample_size <= 1:
-            sample_size = int(nb_images * sample_size)
-        else:
-            sample_size = min(nb_images, sample_size)
-        sample = self._sample(sample_size)
+        sample = self.sample(sample_size)
 
         # Compute PCA components from the sample.
-        #FIXME: choose an algo
-        pca_model = PCA(n_components=n_dims).fit(sample)
-        ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
-        self.img_size = pca_model.components_.shape[0]
+        extractor = PCAFeatures.create(sample, n_dims)
+        self.img_size = extractor.nb_features
 
         # Create the new FeatureSet
         if self.is_reduced:
             self.remove_feature_set('pca')
-        self.add_feature_set('pca', pca_model=pca_model)
+        self.add_feature_set(extractor)
 
         self.is_reduced = True
 

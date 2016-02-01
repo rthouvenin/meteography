@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from meteography.django.broadcaster.models import (
-    Webcam, PredictionParams, Prediction)
+    Webcam, FeatureSet, PredictionParams, Prediction)
 
 
 admin.site.site_header = "Meteography administration"
@@ -38,6 +38,26 @@ class WebcamAdmin(admin.ModelAdmin):
         if not change:
             webcam.store()
         webcam.save()
+
+
+@admin.register(FeatureSet)
+class FeatureSetAdmin(admin.ModelAdmin):
+    list_display = ('webcam', 'name')
+    list_display_links = ('name', )
+    fields = ('webcam', 'extract_type', 'name')
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None:
+            return ('webcam', 'extract_type', 'name')
+        else:
+            return ('name', )
+
+    def save_model(self, request, feat_set, form, change):
+        """Create set on file before saving the model, in case of create"""
+        if not change:
+            feat_set.store()
+        feat_set.save()
+
 
 
 @admin.register(PredictionParams)

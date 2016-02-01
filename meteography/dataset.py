@@ -145,12 +145,6 @@ class PCAFeatures(FeaturesExtractor):
         ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
         return cls(pca_model)
 
-# Registry to instantiate features extractors from a name
-features_extractors = {
-    'raw': RawFeatures,
-    'pca': PCAFeatures,
-}
-
 
 class FeatureSet:
     """
@@ -356,7 +350,7 @@ class ImageSet:
         self.close()
         return False
 
-    def add_feature_set(self, extractor=None, name=None, params=None, **kwargs):
+    def add_feature_set(self, extractor):
         """
         Create a new FeatureSet in this ImageSet.
         If one with the same extractor already exist, it is not created and
@@ -366,27 +360,10 @@ class ImageSet:
 
         Parameters
         ----------
-        extractor : FeatureExtractor object (optional)
-            The extractor to associated to the feature set. If not provided,
-            one is created from name and params or kwargs
-        name : str (optional)
-            Read only when extractor is not provided, it is the name of the
-            extractor in the class registry.
-        params : list (optional)
-            The list of parameters to use to instantiate the extractor. If not
-            provided, kwargs is used
-        **kwargs : the arguments to use to instantiate the extractor
+        extractor : FeatureExtractor object
+            The extractor to associated to the feature set.
         """
-        if extractor is None:
-            if name not in features_extractors:
-                raise ValueError("No features extractor named %s" % name)
-            #FIXME use directly class instead of name
-            feature_class = features_extractors[name]
-            instance_params = params if params is not None else kwargs
-            extractor = feature_class(**instance_params)
-
         if extractor.name not in self.feature_sets:
-            logger.info("The features set already exists, NOT adding it")
             feature_set = FeatureSet.create(self.fileh, self.root, extractor)
             self.feature_sets[extractor.name] = feature_set
 

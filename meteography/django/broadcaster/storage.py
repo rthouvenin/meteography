@@ -3,14 +3,22 @@ import logging
 from numbers import Number
 import os.path
 import shutil
+import threading
 
 from django.core.files.storage import FileSystemStorage
 from PIL import Image
 
-from meteography.dataset import RawFeatures, ImageSet, DataSet
+from meteography.dataset import RawFeatures, PCAFeatures, ImageSet, DataSet
 from meteography.django.broadcaster import settings
 
 logger = logging.getLogger(__name__)
+
+
+# Registry to instantiate features extractors from a name
+features_extractors = {
+    'raw': RawFeatures,
+    'pca': PCAFeatures,
+}
 
 
 # FIXME turn into actual storage
@@ -104,6 +112,37 @@ class WebcamStorage:
         hdf5_path = self.dataset_path(webcam_id)
         os.remove(hdf5_path)
         shutil.rmtree(self.fs.path(webcam_id))
+
+    def add_feature_set(self, feature_set_model):
+        feat_type = feature_set_model.extract_type
+        webcam_id = feature_set_model.webcam.webcam_id
+        logger.info("Adding a new set of features %s to webcam %s",
+                    (feat_type, webcam_id))
+
+        if feat_type not in features_extractors:
+            raise ValueError("No features extractor named %s" % feat_type)
+
+        with self.get_dataset(webcam_id) as dataset:
+            if feat_type == 'raw':
+                img_shape = dataset.imgset.img_shape
+                w, h = settings.DEFAULT_FEATURES_SIZE
+                feat_shape = h, w, 3
+                extractor = RawFeatures(feat_shape, img_shape)
+            else:
+                # Compute PCA components from a sample.
+                sample = dataset.imgset.sample()
+                extractor = PCAFeatures.create(sample)
+            if extractor.name in dataset.imgset.feature_sets:
+                raise ValueError("The feature set %s already exists" %
+                                 extractor.name)
+
+        def task(webcam_id, extractor):
+            with self.get_dataset(webcam_id) as dataset:
+                dataset.imgset.add_feature_set(extractor)
+
+        t = threading.Thread(target=task, args=[webcam_id, extractor])
+        t.start()
+        return extractor.name
 
     def reduce_dataset(self, webcam_id):
         """

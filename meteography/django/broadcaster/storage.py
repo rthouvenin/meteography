@@ -116,8 +116,6 @@ class WebcamStorage:
     def add_feature_set(self, feature_set_model):
         feat_type = feature_set_model.extract_type
         webcam_id = feature_set_model.webcam.webcam_id
-        logger.info("Adding a new set of features %s to webcam %s",
-                    (feat_type, webcam_id))
 
         if feat_type not in features_extractors:
             raise ValueError("No features extractor named %s" % feat_type)
@@ -140,23 +138,18 @@ class WebcamStorage:
             with self.get_dataset(webcam_id) as dataset:
                 dataset.imgset.add_feature_set(extractor)
 
+        logger.info("Adding a new set of features %s to webcam %s",
+                    (feat_type, webcam_id))
         t = threading.Thread(target=task, args=[webcam_id, extractor])
         t.start()
         return extractor.name
 
-    def reduce_dataset(self, webcam_id):
-        """
-        Run dimensionality reduction on the data of the webcam
-        """
-        logger.info("Reducing webcam %s", webcam_id)
-        try:
-            with self.get_dataset(webcam_id) as dataset:
-                dataset.reduce_dim()
-                dataset.repack()
-        except Exception:
-            logger.exception("Error while reducing webcam %s", webcam_id)
-        else:
-            logger.info("Done reducing webcam %s", webcam_id)
+    def delete_feature_set(self, feature_set_model):
+        logger.info("Deleting feature set %s", feature_set_model.name)
+        webcam_id = feature_set_model.webcam.webcam_id
+        with self.get_dataset(webcam_id) as dataset:
+            dataset.imgset.remove_feature_set(feature_set_model.name)
+            dataset.repack()
 
     def get_dataset(self, webcam_id):
         hdf5_path = self.dataset_path(webcam_id)

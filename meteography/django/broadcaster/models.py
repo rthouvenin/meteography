@@ -106,6 +106,9 @@ class FeatureSet(models.Model):
     def store(self):
         self.name = webcam_fs.add_feature_set(self)
 
+    def post_delete(self):
+        webcam_fs.delete_feature_set(self)
+
     def __unicode__(self):
         return self.webcam.name + ' - ' + self.name
 
@@ -213,6 +216,7 @@ class Prediction(models.Model):
 
 
 @receiver(post_delete, sender=PredictionParams)
+@receiver(post_delete, sender=FeatureSet)
 @receiver(post_delete, sender=Webcam)
 def models_post_delete(sender, instance, **kwargs):
     instance.post_delete()

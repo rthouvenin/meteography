@@ -68,7 +68,8 @@ def picture(request, webcam_id, timestamp):
         pred_target = params.intervals[-1]
         comp_timestamp = timestamp - pred_target
         comp_date = datetime.fromtimestamp(float(comp_timestamp), utc)
-        old_predictions = Prediction.objects.filter(comp_date=comp_date)
+        old_predictions = Prediction.objects.filter(comp_date=comp_date,
+                                                    params=params)
         for prediction in old_predictions:
             forecast.update_prediction(prediction, pic)
 

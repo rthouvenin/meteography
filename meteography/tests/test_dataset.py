@@ -38,7 +38,10 @@ def make_filedict(t, jitter=False):
 
 def imgset_fixture(request, tmpdir_factory, fname, images):
     filename = tmpdir_factory.mktemp('h5').join(fname).strpath
-    imageset = ImageSet.create(filename, (IMG_SIZE, IMG_SIZE))
+    img_shape = (IMG_SIZE, IMG_SIZE)
+    imageset = ImageSet.create(filename, img_shape)
+    extractor = RawFeatures(img_shape, img_shape)
+    imageset.add_feature_set(extractor)
     for img in images:
         imageset._add_image(**img)
     imageset.fileh.flush()

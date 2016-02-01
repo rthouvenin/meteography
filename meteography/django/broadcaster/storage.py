@@ -7,7 +7,7 @@ import shutil
 from django.core.files.storage import FileSystemStorage
 from PIL import Image
 
-from meteography.dataset import ImageSet, DataSet
+from meteography.dataset import RawFeatures, ImageSet, DataSet
 from meteography.django.broadcaster import settings
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,11 @@ class WebcamStorage:
         hdf5_path = self.dataset_path(webcam_id)
         w, h = settings.WEBCAM_SIZE
         img_shape = h, w, 3
+        w, h = settings.DEFAULT_FEATURES_SIZE
+        feat_shape = h, w, 3
         with ImageSet.create(hdf5_path, img_shape) as imageset:
+            extractor = RawFeatures(feat_shape, img_shape)
+            imageset.add_feature_set(extractor)
             DataSet.create(imageset).close()
 
         # create directories for pictures

@@ -320,11 +320,7 @@ class ImageSet:
             table.attrs.img_shape = img_shape
             table.cols.time.create_csindex()
 
-            imgset = cls(fp)
-            extractor = RawFeatures(img_shape, img_shape)
-            imgset.add_feature_set(extractor)  # FIXME rm?
-
-            return imgset
+            return cls(fp)
         except Exception:
             #Avoid an orphan open file in case of a problem
             if fp is not thefile:
@@ -1150,6 +1146,7 @@ class DataSet:
 
         # Re-initialize the file pointer and the ImageSet instance
         if self.imgset.fileh is self.fileh:
+            self.imgset.close()
             new_imgset = ImageSet.open(old_name)
             new_fileh = new_imgset.fileh
         else:

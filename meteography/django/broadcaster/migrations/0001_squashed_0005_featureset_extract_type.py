@@ -60,7 +60,7 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('name', models.SlugField(max_length=16)),
                 ('webcam', models.ForeignKey(to='broadcaster.Webcam')),
-                ('extract_type', models.CharField(default='raw', max_length=16, choices=[(b'raw', b'Raw'), (b'pca', b'PCA')])),
+                ('extract_type', models.CharField(max_length=16, choices=[(b'raw', b'Raw'), (b'pca', b'PCA')])),
             ],
         ),
         migrations.AddField(

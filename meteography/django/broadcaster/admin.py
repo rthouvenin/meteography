@@ -25,15 +25,7 @@ class ReadOnlyAdmin(admin.ModelAdmin):
 @admin.register(Webcam)
 class WebcamAdmin(admin.ModelAdmin):
     list_display = ('name', )
-    fieldsets = (
-        (None, {'fields': ('webcam_id', 'name')}),
-        ('Compression', {
-            'fields': ('compressed', ),
-            'description': """Compression can be used to reduce the space taken
-                by the webcam data and improve computation speed, but may
-                reduce the quality of the predictions.""",
-        }),
-    )
+    fields = ('webcam_id', 'name')
 
     def get_readonly_fields(self, request, obj=None):
         if obj is not None:
@@ -45,9 +37,6 @@ class WebcamAdmin(admin.ModelAdmin):
         """Init webcam storage before saving the model, in case of create"""
         if not change:
             webcam.store()
-        elif webcam.compressed:
-            # FIXME improve workflow
-            webcam.compress()
         webcam.save()
 
 
@@ -55,11 +44,11 @@ class WebcamAdmin(admin.ModelAdmin):
 class PredictionParamsAdmin(admin.ModelAdmin):
     list_display = ('webcam', 'name', 'intervals')
     list_display_links = ('name', )
-    fields = ('webcam', 'name', 'intervals')
+    fields = ('webcam', 'name', 'intervals', 'features')
 
     def get_readonly_fields(self, request, obj=None):
         if obj is not None:
-            return ('webcam', 'name')
+            return ('webcam', 'name', 'intervals', 'features')
         else:
             return ()
 

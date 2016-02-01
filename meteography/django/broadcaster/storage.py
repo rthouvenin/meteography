@@ -167,7 +167,8 @@ class WebcamStorage:
             os.makedirs(pred_path)
 
             with self.get_dataset(cam_id) as dataset:
-                dataset.make_set(params.name, intervals=params.intervals)
+                dataset.make_set(params.name, params.intervals,
+                                 params.features.name)
         except Exception:
             logger.exception("Error while creating set %s", params.name)
         else:

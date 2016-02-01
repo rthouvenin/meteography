@@ -806,7 +806,7 @@ class DataSet:
             ex_set = fuzzy_node
         return ex_set
 
-    def init_set(self, name, intervals, feature_set=None):
+    def init_set(self, name, intervals, feature_set):
         """
         Create a new node in '/examples' of the given `name`, that will store
         the input and output of examples for the given parameters.
@@ -827,8 +827,6 @@ class DataSet:
         ------
         pytables node : the created node.
         """
-        if feature_set is None:
-            feature_set = self.imgset.feature_sets.keys()[0]  # FIXME
         self.delete_set(name)
         ex_group = self.fileh.root.examples
         ex_set = self.fileh.create_group(ex_group, name)
@@ -859,7 +857,7 @@ class DataSet:
     def get_set(self, name):
         return self._nodify(name)
 
-    def make_set(self, name, intervals, feature_set=None):
+    def make_set(self, name, intervals, feature_set):
         """
         Constructs a set of training examples from all the available images.
         If a node with the same name already exists, it is overwritten.

@@ -219,7 +219,8 @@ class TestImageSet:
 def dataset(bigimageset):
     dataset = DataSet.create(bigimageset)
     intervals = [60] * 4 + [120]
-    dataset.make_set('test', intervals)
+    feat_set = bigimageset.feature_sets.keys()[0]
+    dataset.make_set('test', intervals, feat_set)
     return dataset
 
 @pytest.fixture
@@ -270,7 +271,8 @@ class TestDataSet:
     def test_makeset_empty(self, emptydataset):
         "An empty imageset should not be a problem"
         intervals = [60] * 2 + [1800]
-        newset = emptydataset.make_set('empty', intervals)
+        feat_set = emptydataset.imgset.feature_sets.keys()[0]
+        newset = emptydataset.make_set('empty', intervals, feat_set)
         assert(len(newset.input) == 0)
 
     def test_makeinput_last(self, dataset):
@@ -285,7 +287,8 @@ class TestDataSet:
     def test_add_toempty(self, emptydataset, imgfile):
         """Adding an image to an empty dataset should add an image but cannot
         create an example"""
-        testset = emptydataset.init_set('test', intervals=[6, 6, 6])
+        feat_set = emptydataset.imgset.feature_sets.keys()[0]
+        testset = emptydataset.init_set('test', [6, 6, 6], feat_set)
         emptydataset.add_image(imgfile, 'test')
         assert(len(emptydataset.imgset) == 1)
         assert(len(testset.input) == 0)

@@ -15,6 +15,7 @@ import time
 
 import numpy as np
 import PIL
+import scipy.misc
 from sklearn.decomposition import PCA
 import tables
 from tables.nodes import filenode
@@ -71,9 +72,10 @@ class FeaturesExtractor(object):
 
 
 class RawFeatures(FeaturesExtractor):
-    def __init__(self, img_shape):
+    def __init__(self, img_shape, src_shape):
         """
-        Features extractor that simply resize the image and extracts the pixels
+        Features extractor that simply resizes the image and
+        extracts the pixels.
 
         Init parameters
         ---------------
@@ -81,14 +83,21 @@ class RawFeatures(FeaturesExtractor):
             A 2-tuple (for greyscale images) or 3-tuple (for color images)
             that is the target shape to resize to: (height, width, nb_bands)
         """
-        self.img_shape = img_shape
+        self.dest_size = tuple(reversed(img_shape[:2]))
+        self.src_shape = src_shape
+        self.src_size = tuple(reversed(src_shape[:2]))
+
         name = 'raw%dx%d' % (img_shape[1], img_shape[0])
         atom = tables.Atom.from_sctype(PIXEL_TYPE)
-        nb_features = np.prod(img_shape)
+        nb_features = np.prod(img_shape)  # FIXME when bands differ
         super(RawFeatures, self).__init__(name, atom, nb_features)
 
     def extract(self, pixels):
-        #FIXME implement resize
+        if self.dest_size != self.src_size:
+            img = scipy.misc.toimage(pixels.reshape(self.src_shape))
+            img = img.resize(self.dest_size)
+            pixels = np.array(img, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
+            pixels = pixels.flatten()
         return pixels
 
 
@@ -312,7 +321,7 @@ class ImageSet:
             table.cols.time.create_csindex()
 
             imgset = cls(fp)
-            extractor = RawFeatures(img_shape)
+            extractor = RawFeatures(img_shape, img_shape)
             imgset.add_feature_set(extractor)  # FIXME rm?
 
             return imgset

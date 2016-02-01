@@ -6,9 +6,26 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from meteography.dataset import PCAFeatures, ImageSet, DataSet
+from meteography.dataset import RawFeatures, PCAFeatures, ImageSet, DataSet
 
 IMG_SIZE = 20
+
+
+class TestRawFeatures:
+    def test_extract_samesize(self):
+        shape = (IMG_SIZE, IMG_SIZE)
+        data = np.random.rand(IMG_SIZE * IMG_SIZE)
+        extractor = RawFeatures(shape, shape)
+        features = extractor.extract(data)
+        assert(features is data)
+
+    def test_extract_halfsize(self):
+        src_shape = (IMG_SIZE, IMG_SIZE)
+        dest_shape = (IMG_SIZE / 2, IMG_SIZE / 2)
+        data = np.random.rand(IMG_SIZE * IMG_SIZE)
+        extractor = RawFeatures(dest_shape, src_shape)
+        features = extractor.extract(data)
+        assert(features.shape == ((IMG_SIZE / 2) ** 2, ))
 
 
 def make_filedict(t, jitter=False):

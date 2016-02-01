@@ -304,30 +304,6 @@ class TestDataSet:
         assert(len(testset.input) == prev_nb_ex + 1)
         assert(len(testset.output) == prev_nb_ex + 1)
 
-    def test_reducedim(self, dataset_rw):
-        testset = dataset_rw.fileh.root.examples.test
-        prev_refs_shape = testset.img_refs.shape
-        prev_nb_feat = testset.input.shape[1]
-        prev_imgdim = testset.output.shape[1]
-        dataset_rw.reduce_dim()
-        assert(testset.img_refs.shape == prev_refs_shape)
-        assert(len(testset.input) == prev_refs_shape[0])
-        assert(len(testset.output) == prev_refs_shape[0])
-        assert(testset.input.shape[1] < prev_nb_feat)
-        assert(testset.output.shape[1] < prev_imgdim)
-
-    def test_add_afterreduced(self, dataset_rw, imgfile):
-        """Adding an image to a dataset after it was reduced should
-        not be a problem"""
-        prev_length = len(dataset_rw.imgset)
-        testset = dataset_rw.fileh.root.examples.test
-        prev_nb_ex = len(testset.input)
-        dataset_rw.reduce_dim()
-        dataset_rw.add_image(imgfile, 'test')
-        assert(len(dataset_rw.imgset) == prev_length + 1)
-        assert(len(testset.input) == prev_nb_ex + 1)
-        assert(len(testset.output) == prev_nb_ex + 1)
-
     def test_repack(self, dataset_rw):
         "Repacking should reclaim the space of a deleted set"
         prev_size = dataset_rw.fileh.get_filesize()

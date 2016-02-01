@@ -1034,46 +1034,6 @@ class DataSet:
                 ex_set.output.flush()
         return img
 
-    def reduce_dim(self):
-        """
-        Perform dimensionality reduction on the underlying ImageSet, and
-        re-compute the input and output arrays of all the sets of examples.
-        Note that re-computing the reduction after some images were added may
-        INCREASE the dimensionality (but would improve the sampling)
-        """
-        # Compute PCA components from a sample.
-        sample = self.imgset.sample()
-        extractor = PCAFeatures.create(sample)
-
-        # Create the new FeatureSet
-        if 'pca' in self.imgset.feature_sets:
-            self.imgset.remove_feature_set('pca')
-        self.imgset.add_feature_set(extractor)
-
-        # Recompute all the example sets
-        for ex_set in self.fileh.root.examples:
-            logger.info("Applying the reduction to set %s", ex_set._v_name)
-            ex_set._v_attrs.features = 'pca'
-            self._recompute_set(ex_set)
-
-    def _recompute_set(self, ex_set):
-        """
-        Re-create the input and output arrays of `ex_set`.
-        """
-        hist_len = len(ex_set._v_attrs.intervals)
-        feature_set = ex_set._v_attrs.features
-        self._create_set_arrays(ex_set, None, 'newinput', 'newoutput')
-        for refs_row in ex_set.img_refs:
-            pixels_row = self.imgset.get_pixels_at(refs_row, feature_set)
-            newfeatures = pixels_row[:-1].flatten()
-            oldfeatures = ex_set.input[ex_set.img_refs.nrow, -hist_len:]
-            ex_set.newinput.append([np.hstack([newfeatures, oldfeatures])])
-            ex_set.newoutput.append([pixels_row[-1]])
-        ex_set.input.remove()
-        ex_set.output.remove()
-        ex_set.newinput.rename('input')
-        ex_set.newoutput.rename('output')
-
     def input_img(self, ex_set, i, j):
         """
         Return the pixels the `j`th image from example `i` in the input data,
@@ -1103,7 +1063,7 @@ class DataSet:
 
         You may want to call repack after these operations:
          - delete_set
-         - reduce_dim
+         - ImageSet.remove_feature_set
 
         Notes
         -----

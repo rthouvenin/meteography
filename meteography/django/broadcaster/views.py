@@ -52,6 +52,7 @@ def picture(request, webcam_id, timestamp):
     except Webcam.DoesNotExist:
         return HttpResponseNotFound("The webcam %s does not exist" % webcam_id)
 
+    timestamp = int(timestamp)
     # Save the new picture
     img_bytes = io.BytesIO(request.read())
     pic = Picture(webcam, timestamp, img_bytes)
@@ -60,12 +61,12 @@ def picture(request, webcam_id, timestamp):
     # Make a new prediction and save it for each set of prediction params
     params_list = webcam.predictionparams_set.all()
     for params in params_list:
-        prediction = forecast.make_prediction(webcam, params, int(timestamp))
+        prediction = forecast.make_prediction(webcam, params, timestamp)
 
         # Check if there was any prediction targetting this timestamp,
         # and if yes compute the error
         pred_target = params.intervals[-1]
-        comp_timestamp = int(timestamp) - pred_target
+        comp_timestamp = timestamp - pred_target
         comp_date = datetime.fromtimestamp(float(comp_timestamp), utc)
         old_predictions = Prediction.objects.filter(comp_date=comp_date)
         for prediction in old_predictions:

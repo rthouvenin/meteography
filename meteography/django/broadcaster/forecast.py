@@ -21,7 +21,7 @@ def make_prediction(webcam, params, timestamp):
     params : PredictionParams instance
         The parameters to use to compute the prediction
     timestamp : int
-        The Unix-Epoch-timestamp (UTC) of when the prediction would happen
+        The Unix-Epoch-timestamp (UTC) of when the prediction is made
 
     Return
     ------
@@ -30,13 +30,13 @@ def make_prediction(webcam, params, timestamp):
     cam_id = webcam.webcam_id
     result = None
     with webcam_fs.get_dataset(cam_id) as dataset:
-        onlineset = dataset.get_set(params.name)
-        new_input = dataset.make_input(onlineset, timestamp)
-        if new_input is not None and len(onlineset.input) > 0:
+        ex_set = dataset.get_set(params.name)
+        new_input = dataset.make_input(ex_set, timestamp)
+        if new_input is not None and len(ex_set.input) > 0:
             neighbors = NearestNeighbors()
-            neighbors.fit(onlineset.input)
+            neighbors.fit(ex_set.input)
             output_ref = neighbors.predict(new_input)
-            output = dataset.output_img(onlineset, output_ref)
+            output = dataset.output_img(ex_set, output_ref)
             # FIXME reference existing image (data and file)
             imgpath = webcam_fs.prediction_path(cam_id, params.name, timestamp)
             result = Prediction(params=params, path=imgpath)

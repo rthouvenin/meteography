@@ -7,6 +7,7 @@ from datetime import timedelta
 import os.path
 import time
 
+import pytz
 import requests
 
 parser = argparse.ArgumentParser(
@@ -20,8 +21,9 @@ args = parser.parse_args()
 
 url_pattern = 'http://%s/webcams/%s/pictures/%d'
 campath = os.path.join('..', 'webcams', args.webcam)
+tz = pytz.timezone('Europe/Paris')
 
-epoch = datetime.fromtimestamp(0)
+epoch = datetime.fromtimestamp(0, pytz.utc)
 from_day = datetime.strptime(args.fromday, '%Y%m%d')
 to_day = datetime.strptime(args.today, '%Y%m%d')
 nb_days = (to_day - from_day).days
@@ -39,7 +41,8 @@ for d in range(nb_days+1):
             with open(os.path.join(daypath, h, filename)) as fp:
                 m = int(os.path.splitext(filename)[0][-2:])
                 dt = datetime(day.year, day.month, day.day, int(h), int(m))
-                timestamp = (dt - epoch).total_seconds()
+                dt = tz.localize(dt)
+                timestamp = (dt.astimezone(pytz.utc) - epoch).total_seconds()
 
                 url = url_pattern % (args.host, args.webcam, timestamp)
                 img_data = fp.read()

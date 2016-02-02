@@ -1,8 +1,6 @@
 import io
 from datetime import datetime
 
-import matplotlib
-matplotlib.use('Agg')  # FIXME put somewhere more appropriate
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 

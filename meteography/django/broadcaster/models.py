@@ -2,8 +2,6 @@ from datetime import timedelta
 import threading
 import time
 
-import matplotlib
-matplotlib.use('Agg')  # FIXME put somewhere more appropriate
 import matplotlib.pylab as plt
 
 from django.db import models
@@ -163,7 +161,6 @@ class PredictionParams(models.Model):
         This will erase any set with the same name!
         """
         super(PredictionParams, self).save(*args, **kwargs)
-        # FIXME saving without changing should not erase data (prevent in UI?)
         t = threading.Thread(target=webcam_fs.add_examples_set, args=[self])
         t.start()
 

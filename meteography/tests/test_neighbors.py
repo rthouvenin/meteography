@@ -68,8 +68,18 @@ def test_predict_notexisting(fixed_array):
     "Find the nearest neighbor of an unexisting row"
     nn = NearestNeighbors()
     nn.fit(*fixed_array)
-    y = nn.predict(np.array([4.2, 4.2, 4.2]))
+    y = nn.predict(np.array([4.6, 4.4, 4.4]))
     assert(y == 4)
+
+
+def test_predict_wminkowski(fixed_array):
+    "Weighing the metric should be taken into account"
+    nn = NearestNeighbors(metric='wminkowski', w=np.array([10, 1, 1]))
+    nn.fit(*fixed_array)
+    y4 = nn.predict(np.array([4.4, 4.4, 4.6]))
+    y5 = nn.predict(np.array([4.6, 4.4, 4.4]))
+    assert(y4 == 4)
+    assert(y5 == 5)
 
 
 def test_predict_extendedarray(variable_array, fixed_array):

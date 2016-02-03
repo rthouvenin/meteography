@@ -84,7 +84,3 @@ def plot_learning_curve(dataset, algo, max_ex=None, nb_points=20, **kwargs):
     vline = ax1.plot(mrange, valid_costs, 'r', label='valid. cost')
     ax1.legend()
     return [tline, vline]
-
-def compute_error(y1, y2):
-    "Squared euclidian distance between y1 and y2"
-    return np.sum(np.square(y1 - y2))

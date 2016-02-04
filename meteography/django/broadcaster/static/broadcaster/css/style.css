@@ -1,0 +1,60 @@
+body {
+  padding: 10px;
+}
+
+.linked-list li > a {
+  color: inherit;
+}
+.linked-list li > a:hover {
+  text-decoration: none;
+}
+
+
+.latest-pred header {
+  display: none;
+}
+.latest-pred .thumbnail {
+  display: inline-block;
+  margin-bottom: 0;
+}
+.latest-pred div {
+  display: inline-block;
+  vertical-align: middle;
+}
+.latest-pred p {
+  margin-top: 5px;
+}
+
+.cam-list {
+  list-style: none;
+}
+.cam-list .latest-pred header {
+  display: initial;
+}
+.cam-list li {
+  padding: 10px;
+}
+.cam-list > li:nth-child(odd) {
+  background-color: #ddddff;
+}
+.cam-list > li:nth-child(even) {
+  background-color: #bbbbff;
+}
+.cam-list.linked-list > li:hover {
+  background-color: #ccccff;
+}
+
+.details-panel {
+  margin: 10px 0px 0px 30px;
+}
+.pred-history td {
+  padding: 5px;
+}
+.pred-history .thumbnail {
+  margin-bottom: 0;
+}
+
+.errgraph {
+  width: 100%;
+  margin: 10px;
+}

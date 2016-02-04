@@ -12,8 +12,10 @@
       <header>{{ name }}</header>
       {% if latest_prediction %}
         <p>
-          Latest prediction done on {{latest_prediction.comp_date}}
-          for {{latest_prediction.minutes_target}} min later
+          {% with hours=latest_prediction.target_in_hours %}
+            Latest prediction computed on {{latest_prediction.comp_date}}
+            for {{hours}} hour{{hours|pluralize}} later
+          {% endwith %}
         </p>
       {% endif %}
     </div>

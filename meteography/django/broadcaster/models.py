@@ -184,8 +184,8 @@ class Prediction(models.Model):
     def url(self):
         return '/%s/%s' % (WEBCAM_STATIC_URL, self.path)
 
-    def minutes_target(self):
-        return (self.params.intervals[-1] // 60)
+    def target_in_hours(self):
+        return (self.params.intervals[-1] // 3600)
 
     def actual(self):
         """

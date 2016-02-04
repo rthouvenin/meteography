@@ -1,0 +1,67 @@
+body {
+  padding: 10px;
+}
+
+.linked-list {
+  li > a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+.latest-pred {
+  header {
+    display: none;
+  }
+  div {
+    display: inline-block;
+    vertical-align: middle;
+  }
+  p {
+    margin-top: 5px;
+  }
+  .thumbnail {
+    display: inline-block;
+    margin-bottom: 0;
+  }
+}
+
+.cam-list {
+  list-style: none;
+  
+  .latest-pred header {
+    display: initial;
+  }
+  li {
+    padding: 10px;
+  }
+  > li:nth-child(odd) {
+    background-color: #ddddff;
+  }
+  > li:nth-child(even) {
+    background-color: #bbbbff;
+  }
+  &.linked-list > li:hover {
+    background-color: #ccccff;
+  }
+}
+
+.details-panel {
+  margin: 10px 0px 0px 30px;
+}
+
+.pred-history {
+  width: 100%;
+  
+  td {
+    padding: 5px;
+  }
+  .thumbnail {
+    margin-bottom: 0;
+  }
+}
+
+.errgraph {
+  width: 100%;
+  margin: 10px;
+}

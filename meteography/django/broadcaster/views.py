@@ -1,8 +1,11 @@
 import io
 from datetime import datetime
 
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.dates import DateFormatter
+from matplotlib.figure import Figure
+from matplotlib.ticker import MaxNLocator
+import numpy as np
 
 from django.http import (
     HttpResponse, HttpResponseNotFound, HttpResponseForbidden)
@@ -80,22 +83,24 @@ def error_graph(request, webcam_id, pname):
                                     webcam_id=webcam_id, name=pname)
 
     dates, errors = zip(*pred_params.error_data())
-    try:
-        # Generate the graph with matplotlib
-        fig, ax = plt.subplots()
-        ax.plot(dates, errors)
-        plt.title("Evolution of error value over time")
-        plt.xlabel("Time")
-        plt.ylabel("Error")
-        ax.xaxis.set_major_locator(plt.MaxNLocator(5))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%Y'))
 
-        # Write the graph image to the response
-        img_bytes = io.BytesIO()
-        plt.savefig(img_bytes, format='png')
-        response = HttpResponse(content_type='image/png')
-        response.write(img_bytes.getvalue())
-    finally:
-        plt.close()
+    # Smoothen data with moving average
+    window = 12
+    errors = np.convolve(errors, np.ones(window)/window, mode='same')
+
+    # Generate the graph with matplotlib
+    fig = Figure()
+    FigureCanvas(fig)
+    ax = fig.add_subplot(111)
+    ax.plot(dates, errors)
+    ax.set_title("Evolution of error value over time")
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Error")
+    ax.xaxis.set_major_locator(MaxNLocator(5))
+    ax.xaxis.set_major_formatter(DateFormatter('%d/%m/%Y'))
+
+    # Write the graph image to the response
+    response = HttpResponse(content_type='image/png')
+    fig.savefig(response, format='png')
 
     return response

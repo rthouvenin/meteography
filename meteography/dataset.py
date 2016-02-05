@@ -175,9 +175,7 @@ class PCAFeatures(FeaturesExtractor):
             the amount of variance that needs to be explained is greater than
             the percentage specified by n_components.
         """
-        #FIXME: choose an algo
         pca_model = PCA(n_components=n_dims).fit(data)
-        ##self.pca = TruncatedSVD(min(300, sample_size)).fit(sample)
         return cls(pca_model)
 
 
@@ -210,8 +208,12 @@ class FeatureSet:
             self.features_obj = pickle.load(fn)
             fn.close()
         else:
-            #FIXME check the file node does not exist already and create it
             self.features_obj = features_obj
+            if 'model' not in self.root:
+                fn = filenode.new_node(self.root._v_file,
+                                       where=self.root, name='model')
+                pickle.dump(features_obj, fn, pickle.HIGHEST_PROTOCOL)
+                fn.close()
 
     @property
     def nb_features(self):
@@ -240,11 +242,6 @@ class FeatureSet:
 
         tables_file.create_earray(group, 'features', features_obj.atom,
                                   shape=(0, features_obj.nb_features))
-
-        # FIXME move to FeatureSet constructor
-        fn = filenode.new_node(tables_file, where=group, name='model')
-        pickle.dump(features_obj, fn, pickle.HIGHEST_PROTOCOL)
-        fn.close()
 
         return cls(group, features_obj)
 

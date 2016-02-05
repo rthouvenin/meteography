@@ -59,16 +59,15 @@ class FeatureSetAdmin(admin.ModelAdmin):
         feat_set.save()
 
 
-
 @admin.register(PredictionParams)
 class PredictionParamsAdmin(admin.ModelAdmin):
     list_display = ('webcam', 'name', 'intervals')
     list_display_links = ('name', )
-    fields = ('webcam', 'name', 'intervals', 'features')
+    fields = ('name', 'features', 'intervals')
 
     def get_readonly_fields(self, request, obj=None):
         if obj is not None:
-            return ('webcam', 'name', 'intervals', 'features')
+            return ('name', 'features', 'intervals')
         else:
             return ()
 

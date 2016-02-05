@@ -93,6 +93,7 @@ class Picture:
 
 
 class FeatureSet(models.Model):
+    "Description of a FeatureSet available in the DataSet"
     RAW = 'raw'
     PCA = 'pca'
     EXTRACT_TYPES = ((RAW, 'Raw'), (PCA, 'PCA'))
@@ -113,10 +114,13 @@ class FeatureSet(models.Model):
 
 class PredictionParams(models.Model):
     "The parameters for the computation of predictions"
-    webcam = models.ForeignKey(Webcam)
     name = models.SlugField(max_length=16)
-    features = models.ForeignKey(FeatureSet)  # FIXME restrict to webcam
+    features = models.ForeignKey(FeatureSet)
     intervals = CommaSeparatedIntegerField(max_length=128)
+
+    @property
+    def webcam(self):
+        return self.features.webcam
 
     def latest_prediction(self):
         predictions = self.prediction_set

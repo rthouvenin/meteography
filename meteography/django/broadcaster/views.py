@@ -31,6 +31,23 @@ def webcam(request, webcam_id):
     webcam = get_object_or_404(Webcam, pk=webcam_id)
     context = {
         'webcam': webcam,
+        'histories': [{
+            'id': 'hist-latest',
+            'name': "Latest",
+            'orderby': '-comp_date',
+        }, {
+            'id': 'hist-worst',
+            'name': "Highest error",
+            'orderby': '-error',
+        }, {
+            'id': 'hist-best',
+            'name': "Lowest error",
+            'orderby': 'error',
+        }, {
+            'id': 'hist-random',
+            'name': "Random",
+            'orderby': '?',
+        }],
     }
     return render(request, 'broadcaster/webcam.html', context)
 

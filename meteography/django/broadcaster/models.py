@@ -122,9 +122,9 @@ class PredictionParams(models.Model):
         predictions = self.prediction_set
         return predictions.latest() if predictions else None
 
-    def history(self, length=5, with_error=True):
+    def history(self, length=5, orderby='-comp_date', with_error=True):
         "Return the latest predictions for this parameters object"
-        history_set = self.prediction_set.order_by('-comp_date')
+        history_set = self.prediction_set.order_by(orderby)
 
         if with_error is True:
             history_set = history_set.exclude(error=None)

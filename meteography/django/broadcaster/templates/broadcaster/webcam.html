@@ -16,51 +16,39 @@
 
           <div class="row details-panel">
             <div class="col-xs-12 col-md-6 history-tabs">
-                <ul class="nav nav-tabs" role="tablist">
-                    <li role="presentation" class="active">
-                      <a href="#hist-latest" aria-controls="hist-latest" role="tab" data-toggle="tab">
-                        Latest
-                      </a>
-                    </li>
-                    <li role="presentation">
-                      <a href="#hist-worst" aria-controls="hist-worst" role="tab" data-toggle="tab">
-                        Highest error
-                      </a>
-                    </li>
-                    <li role="presentation">
-                      <a href="#hist-best" aria-controls="hist-best" role="tab" data-toggle="tab">
-                        Lowest error
-                      </a>
-                    </li>
-                    <li role="presentation">
-                      <a href="#hist-random" aria-controls="hist-random" role="tab" data-toggle="tab">
-                        Random
-                      </a>
-                    </li>
-                </ul>
+              <ul class="nav nav-tabs" role="tablist">
+                {% for history in histories %}
+                  <li role="presentation" {% if forloop.first %}class="active"{% endif %}>
+                    <a href="#{{params.name}}-{{history.id}}" role="tab" data-toggle="tab"
+                       aria-controls="{{params.name}}-{{history.id}}" >
+                      {{ history.name }}
+                    </a>
+                  </li>
+                {% endfor %}
+              </ul>
 
                 <div class="tab-content">
-                  <div role="tabpanel" class="tab-pane active" id="hist-latest">
-                    <table class="pred-history">
-                      <tr>
-                        <td>Computed on (UTC)</td>
-                        <td>Predicted</td>
-                        <td>Happened</td>
-                        <td>Error</td>
-                      </tr>
-                      {% for prediction in params.history %}
+                  {% for hist in histories %}
+                    <div role="tabpanel" id="{{params.name}}-{{hist.id}}"
+                         class="tab-pane{% if forloop.first %} active{% endif %}" >
+                      <table class="pred-history">
                         <tr>
-                          <td>{{ prediction.comp_date }}</td>
-                          <td><img src="{{ prediction.url }}" class="thumbnail" /></td>
-                          <td><img src="{{ prediction.actual }}" class="thumbnail" /></td>
-                          <td>{{ prediction.error|floatformat:2 }}</td>
+                          <td>Computed on (UTC)</td>
+                          <td>Predicted</td>
+                          <td>Happened</td>
+                          <td>Error</td>
                         </tr>
-                      {% endfor %}
-                    </table>
-                  </div>
-                  <div role="tabpanel" class="tab-pane" id="hist-worst">Not implemented</div>
-                  <div role="tabpanel" class="tab-pane" id="hist-best">Not implemented</div>
-                  <div role="tabpanel" class="tab-pane" id="hist-random">Not implemented</div>
+                        {% for prediction in params|history:hist.orderby %}
+                          <tr>
+                            <td>{{ prediction.comp_date }}</td>
+                            <td><img src="{{ prediction.url }}" class="thumbnail" /></td>
+                            <td><img src="{{ prediction.actual }}" class="thumbnail" /></td>
+                            <td>{{ prediction.error|floatformat:2 }}</td>
+                          </tr>
+                        {% endfor %}
+                      </table>
+                    </div>
+                  {% endfor %}
                 </div>
             </div>
             <div class="col-xs-12 col-md-6">

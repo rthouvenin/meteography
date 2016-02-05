@@ -82,20 +82,43 @@ class RawFeatures(FeaturesExtractor):
         img_shape : tuple
             A 2-tuple (for greyscale images) or 3-tuple (for color images)
             that is the target shape to resize to: (height, width, nb_bands)
+        src_shape : tuple
+            A 2-tuple (for greyscale images) or 3-tuple (for color images)
+            that is the source shape to resize from: (height, width, nb_bands)
         """
+        self.dest_bands = img_shape[2] if len(img_shape) == 3 else 1
         self.dest_size = tuple(reversed(img_shape[:2]))
         self.src_shape = src_shape
+        self.src_bands = src_shape[2] if len(src_shape) == 3 else 1
         self.src_size = tuple(reversed(src_shape[:2]))
 
         name = 'raw%dx%d' % (img_shape[1], img_shape[0])
         atom = tables.Atom.from_sctype(PIXEL_TYPE)
-        nb_features = np.prod(img_shape)  # FIXME when bands differ
+        nb_features = np.prod(img_shape)
         super(RawFeatures, self).__init__(name, atom, nb_features)
 
     def extract(self, pixels):
-        if self.dest_size != self.src_size:
+        """
+        Resize the image
+
+        Parameters
+        ----------
+        pixels : array
+            1-d array of floats representing the image pixels, scaled to [0, 1]
+        """
+        if self.dest_size != self.src_size or self.dest_bands != self.src_bands:
             img = scipy.misc.toimage(pixels.reshape(self.src_shape))
-            img = img.resize(self.dest_size)
+
+            if self.dest_size != self.src_size:
+                img = img.resize(self.dest_size)
+
+            if self.dest_bands != self.src_bands:
+                if self.dest_bands == 3:
+                    mode = ''.join(COLOR_BANDS)
+                else:
+                    mode = ''.join(GREY_BANDS)
+                img = img.convert(mode)
+
             pixels = np.array(img, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
             pixels = pixels.flatten()
         return pixels

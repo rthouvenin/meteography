@@ -19,10 +19,10 @@ class TestRawFeatures:
         features = extractor.extract(data)
         assert(features is data)
 
-    def test_extract_halfsize(self):
-        src_shape = (IMG_SIZE, IMG_SIZE)
+    def test_extract_halfsizetogrey(self):
+        src_shape = (IMG_SIZE, IMG_SIZE, 3)
         dest_shape = (IMG_SIZE / 2, IMG_SIZE / 2)
-        data = np.random.rand(IMG_SIZE * IMG_SIZE)
+        data = np.random.rand(IMG_SIZE * IMG_SIZE * 3)
         extractor = RawFeatures(dest_shape, src_shape)
         features = extractor.extract(data)
         assert(features.shape == ((IMG_SIZE / 2) ** 2, ))

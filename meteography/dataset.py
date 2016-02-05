@@ -97,15 +97,7 @@ class RawFeatures(FeaturesExtractor):
         nb_features = np.prod(img_shape)
         super(RawFeatures, self).__init__(name, atom, nb_features)
 
-    def extract(self, pixels):
-        """
-        Resize the image
-
-        Parameters
-        ----------
-        pixels : array
-            1-d array of floats representing the image pixels, scaled to [0, 1]
-        """
+    def _extract_single(self, pixels):
         if self.dest_size != self.src_size or self.dest_bands != self.src_bands:
             img = scipy.misc.toimage(pixels.reshape(self.src_shape))
 
@@ -122,6 +114,24 @@ class RawFeatures(FeaturesExtractor):
             pixels = np.array(img, dtype=PIXEL_TYPE) / MAX_PIXEL_VALUE
             pixels = pixels.flatten()
         return pixels
+
+    def extract(self, pixels):
+        """
+        Resize the image
+
+        Parameters
+        ----------
+        pixels : array
+            1-d array of floats representing the image pixels, scaled to [0, 1]
+            or 2-d array representing a sequence of images
+        """
+        if pixels.ndim == 1:
+            return self._extract_single(pixels)
+        else:
+            res = np.empty((len(pixels), self.nb_features), dtype=PIXEL_TYPE)
+            for i, img_pixels in enumerate(pixels):
+                res[i] = self._extract_single(img_pixels)
+            return res
 
 
 class PCAFeatures(FeaturesExtractor):
@@ -143,8 +153,10 @@ class PCAFeatures(FeaturesExtractor):
         super(PCAFeatures, self).__init__(name, atom, nb_features)
 
     def extract(self, pixels):
-        #FIXME support multiple images
-        return self.pca.transform([pixels])[0]
+        if pixels.ndim == 1:
+            return self.pca.transform([pixels])[0]
+        else:
+            return self.pca.transform(pixels)
 
     @classmethod
     def create(cls, data, n_dims=.99):

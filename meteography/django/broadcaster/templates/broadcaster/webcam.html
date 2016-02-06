@@ -6,7 +6,7 @@
 {% block body %}
   <h1 class="row">{{ webcam.name }} meteography</h1>
 
-  {% with params_list=webcam.predictionparams_set.all %}
+  {% with params_list=webcam.prediction_params %}
     {% if params_list %}
       {% for params in params_list %}
         <section class="row">

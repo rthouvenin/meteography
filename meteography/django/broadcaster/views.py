@@ -77,7 +77,7 @@ def picture(request, webcam_id, timestamp):
     pic.save()
 
     # Make a new prediction and save it for each set of prediction params
-    params_list = webcam.predictionparams_set.all()
+    params_list = webcam.prediction_params()
     for params in params_list:
         prediction = forecast.make_prediction(webcam, params, timestamp)
 
@@ -97,24 +97,26 @@ def picture(request, webcam_id, timestamp):
 def error_graph(request, webcam_id, pname):
     "Generate a graph of error evolution over time"
     pred_params = get_object_or_404(PredictionParams,
-                                    webcam_id=webcam_id, name=pname)
+                                    features__webcam_id=webcam_id, name=pname)
 
-    dates, errors = zip(*pred_params.error_data())
-
-    # Smoothen data with moving average
-    window = 12
-    errors = np.convolve(errors, np.ones(window)/window, mode='same')
+    error_data = pred_params.error_data()
+    if error_data:
+        dates, errors = zip(*error_data)
+        # Smoothen data with moving average
+        window = 12
+        errors = np.convolve(errors, np.ones(window)/window, mode='same')
 
     # Generate the graph with matplotlib
     fig = Figure()
     FigureCanvas(fig)
     ax = fig.add_subplot(111)
-    ax.plot(dates, errors)
     ax.set_title("Evolution of error value over time")
     ax.set_xlabel("Time")
     ax.set_ylabel("Error")
-    ax.xaxis.set_major_locator(MaxNLocator(5))
-    ax.xaxis.set_major_formatter(DateFormatter('%d/%m/%Y'))
+    if error_data:
+        ax.plot(dates, errors)
+        ax.xaxis.set_major_locator(MaxNLocator(5))
+        ax.xaxis.set_major_formatter(DateFormatter('%d/%m/%Y'))
 
     # Write the graph image to the response
     response = HttpResponse(content_type='image/png')

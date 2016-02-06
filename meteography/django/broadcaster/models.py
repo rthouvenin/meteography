@@ -55,8 +55,11 @@ class Webcam(models.Model):
     name = models.CharField(max_length=32)
 
     def latest_prediction(self):
-        predictions = Prediction.objects.filter(params__webcam=self)
+        predictions = Prediction.objects.filter(params__features__webcam=self)
         return predictions.latest() if predictions else None
+
+    def prediction_params(self):
+        return PredictionParams.objects.filter(features__webcam=self)
 
     def store(self):
         webcam_fs.add_webcam(self.webcam_id)

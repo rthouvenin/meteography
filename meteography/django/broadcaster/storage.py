@@ -8,7 +8,8 @@ import threading
 from django.core.files.storage import FileSystemStorage
 from PIL import Image
 
-from meteography.dataset import RawFeatures, PCAFeatures, ImageSet, DataSet
+from meteography.dataset import RawFeatures, PCAFeatures, RBMFeatures
+from meteography.dataset import ImageSet, DataSet
 from meteography.django.broadcaster import settings
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 features_extractors = {
     'raw': RawFeatures,
     'pca': PCAFeatures,
+    'rbm': RBMFeatures,
 }
 
 
@@ -120,29 +122,33 @@ class WebcamStorage:
         if feat_type not in features_extractors:
             raise ValueError("No features extractor named %s" % feat_type)
 
-        with self.get_dataset(webcam_id) as dataset:
-            if feat_type == 'raw':
-                img_shape = dataset.imgset.img_shape
-                w, h = settings.DEFAULT_FEATURES_SIZE
-                feat_shape = h, w, 3
-                extractor = RawFeatures(feat_shape, img_shape)
-            else:
-                # Compute PCA components from a sample.
-                sample = dataset.imgset.sample()
-                extractor = PCAFeatures.create(sample)
-            if extractor.name in dataset.imgset.feature_sets:
-                raise ValueError("The feature set %s already exists" %
-                                 extractor.name)
-
-        def task(webcam_id, extractor):
+        def task(webcam_id, feat_type):
             with self.get_dataset(webcam_id) as dataset:
+                if feat_type == 'raw':
+                    img_shape = dataset.imgset.img_shape
+                    w, h = settings.DEFAULT_FEATURES_SIZE
+                    feat_shape = h, w, 3
+                    extractor = RawFeatures(feat_shape, img_shape)
+                elif feat_type == 'pca':
+                    logger.info("Starting computation of a PCM model")
+                    sample = dataset.imgset.sample()
+                    extractor = PCAFeatures.create(sample)
+                else:  # rbm
+                    logger.info("Starting computation of a RBM model")
+                    sample = dataset.imgset.sample()
+                    extractor = RBMFeatures.create(sample)
+
+                if extractor.name in dataset.imgset.feature_sets:
+                    raise ValueError("The feature set %s already exists" %
+                                     extractor.name)
+
+                logger.info("Adding a new set of features %s to webcam %s",
+                            feat_type, webcam_id)
                 dataset.imgset.add_feature_set(extractor)
 
-        logger.info("Adding a new set of features %s to webcam %s",
-                    (feat_type, webcam_id))
-        t = threading.Thread(target=task, args=[webcam_id, extractor])
+        t = threading.Thread(target=task, args=[webcam_id, feat_type])
         t.start()
-        return extractor.name
+        return feat_type  # FIXME an event should send name to model
 
     def delete_feature_set(self, feature_set_model):
         logger.info("Deleting feature set %s", feature_set_model.name)

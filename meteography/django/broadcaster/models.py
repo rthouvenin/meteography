@@ -96,7 +96,8 @@ class FeatureSet(models.Model):
     "Description of a FeatureSet available in the DataSet"
     RAW = 'raw'
     PCA = 'pca'
-    EXTRACT_TYPES = ((RAW, 'Raw'), (PCA, 'PCA'))
+    RBM = 'rbm'
+    EXTRACT_TYPES = ((RAW, 'Raw'), (PCA, 'PCA'), (RBM, 'RBM'))
 
     webcam = models.ForeignKey(Webcam)
     extract_type = models.CharField(max_length=16, choices=EXTRACT_TYPES)

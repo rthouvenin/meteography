@@ -17,6 +17,7 @@ import numpy as np
 import PIL
 import scipy.misc
 from sklearn.decomposition import PCA
+from sklearn.neural_network.rbm import BernoulliRBM
 import tables
 from tables.nodes import filenode
 
@@ -50,6 +51,20 @@ def parse_path(filename):
     hour, minute = basename[:basename.index('.')].split('-')
     date = datetime(year, month, day, int(hour), int(minute))
     return int(time.mktime(date.timetuple()))
+
+
+def accepts_one_row(func):
+    """
+    Method decorator for functions that process a 2-d array.
+    Adds the possibility of being called with a 1-d array (a single row) and
+    returning a 1-d array (first row of the result)
+    """
+    def process(self, arr):
+        if arr.ndim == 1:
+            return func(self, [arr])[0]
+        else:
+            return func(self, arr)
+    return process
 
 
 class FeaturesExtractor(object):
@@ -152,11 +167,9 @@ class PCAFeatures(FeaturesExtractor):
         nb_features = pca_model.components_.shape[0]
         super(PCAFeatures, self).__init__(name, atom, nb_features)
 
+    @accepts_one_row
     def extract(self, pixels):
-        if pixels.ndim == 1:
-            return self.pca.transform([pixels])[0]
-        else:
-            return self.pca.transform(pixels)
+        return self.pca.transform(pixels)
 
     @classmethod
     def create(cls, data, n_dims=.99):
@@ -176,6 +189,44 @@ class PCAFeatures(FeaturesExtractor):
             the percentage specified by n_components.
         """
         pca_model = PCA(n_components=n_dims).fit(data)
+        return cls(pca_model)
+
+
+class RBMFeatures(FeaturesExtractor):
+    def __init__(self, rbm_model):
+        """
+        Features extractor that uses a Rietz-Boltzmann Machine
+        to compute the representation images.
+
+        Init Parameters
+        ---------------
+        rbm_model : sklearn.neural_network.rbm.BernoulliRBM instance
+            The model to use to compute the components
+        """
+        self.rbm = rbm_model
+        name = 'rbm'
+        atom = tables.Float32Atom()
+        nb_features = rbm_model.n_components
+        super(RBMFeatures, self).__init__(name, atom, nb_features)
+
+    @accepts_one_row
+    def extract(self, pixels):
+        return self.rbm.transform(pixels)
+
+    @classmethod
+    def create(cls, data, n_dims=144):
+        """
+        Computes the components from the given data and return a
+        RBMFeatures instance based on these components
+
+        Parameters
+        ----------
+        data : numpy array
+            The data to use to compute the PCA components
+        n_dims : int
+            Number of components to keep.
+        """
+        pca_model = BernoulliRBM(n_components=n_dims).fit(data)
         return cls(pca_model)
 
 
@@ -1046,7 +1097,7 @@ class DataSet:
         else:
             ex_sets = iter(self.fileh.root.examples)
 
-        img = self.imgset.add_from_file(imgfile)  # FIXME ret_features = False
+        img = self.imgset.add_from_file(imgfile)
 
         for ex_set in ex_sets:
             intervals = ex_set._v_attrs.intervals

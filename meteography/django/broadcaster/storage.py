@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from contextlib import contextmanager
 import logging
 from numbers import Number
 import os.path
@@ -11,6 +12,7 @@ from PIL import Image
 from meteography.dataset import RawFeatures, PCAFeatures, RBMFeatures
 from meteography.dataset import ImageSet, DataSet
 from meteography.django.broadcaster import settings
+from meteography.django.broadcaster.request_cache import get_dataset_cache
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +125,7 @@ class WebcamStorage:
             raise ValueError("No features extractor named %s" % feat_type)
 
         def task(webcam_id, feat_type):
-            with self.get_dataset(webcam_id) as dataset:
+            with self.open_dataset(webcam_id) as dataset:
                 if feat_type == 'raw':
                     img_shape = dataset.imgset.img_shape
                     w, h = settings.DEFAULT_FEATURES_SIZE
@@ -157,9 +159,19 @@ class WebcamStorage:
             dataset.imgset.remove_feature_set(feature_set_model.name)
             dataset.repack()
 
-    def get_dataset(self, webcam_id):
+    def open_dataset(self, webcam_id):
         hdf5_path = self.dataset_path(webcam_id)
         return DataSet.open(hdf5_path)
+
+    @contextmanager
+    def get_dataset(self, webcam_id):
+        """
+        Returns the dataset of `webcam_id`, cached for the current request.
+        This method should be called only in a request thread.
+        Returns a dummy context manager for backward compatibility
+        """
+        cache = get_dataset_cache()
+        yield cache[self.dataset_path(webcam_id)]
 
     def add_picture(self, webcam, timestamp, fp):
         """
@@ -195,22 +207,25 @@ class WebcamStorage:
         """
         Create the directories and pytables group for a set of examples
         """
-        logger.info("Creating example set %s on file system", params.name)
+        def task(params):
+            logger.info("Creating example set %s on file system", params.name)
+            cam_id = params.webcam.webcam_id
+            pred_path = self.fs.path(self.prediction_path(cam_id, params.name))
+            try:
+                # Make sure the directory is empty if it exists
+                shutil.rmtree(pred_path, ignore_errors=True)
+                os.makedirs(pred_path)
 
-        cam_id = params.webcam.webcam_id
-        pred_path = self.fs.path(self.prediction_path(cam_id, params.name))
-        try:
-            # Make sure the directory is empty if it exists
-            shutil.rmtree(pred_path, ignore_errors=True)
-            os.makedirs(pred_path)
+                with self.open_dataset(cam_id) as dataset:
+                    dataset.make_set(params.name, params.intervals,
+                                     params.features.name)
+            except Exception:
+                logger.exception("Error while creating set %s", params.name)
+            else:
+                logger.info("Done creating the set %s", params.name)
 
-            with self.get_dataset(cam_id) as dataset:
-                dataset.make_set(params.name, params.intervals,
-                                 params.features.name)
-        except Exception:
-            logger.exception("Error while creating set %s", params.name)
-        else:
-            logger.info("Done creating the set %s", params.name)
+        t = threading.Thread(target=task, args=[params])
+        t.start()
 
     def delete_examples_set(self, params):
         """

@@ -35,6 +35,7 @@ MIDDLEWARE_CLASSES = (
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'meteography.django.broadcaster.request_cache.RequestCacheMiddleware',
 )
 
 ROOT_URLCONF = 'website.urls'

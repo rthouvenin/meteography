@@ -1,5 +1,4 @@
 from datetime import timedelta
-import threading
 import time
 
 import matplotlib.pylab as plt
@@ -161,16 +160,15 @@ class PredictionParams(models.Model):
         The update of the dataset is done asynchronously as it may take time
         to read all the existing images of the cam.
 
-        TODO: race conditions with image upload
-        TODO: what if the dataset update fail? the DB is already updated
+        FIXME: race conditions with image upload
+        FIXME: what if the dataset update fail? the DB is already updated
 
         Note:
         -----
         This will erase any set with the same name!
         """
         super(PredictionParams, self).save(*args, **kwargs)
-        t = threading.Thread(target=webcam_fs.add_examples_set, args=[self])
-        t.start()
+        webcam_fs.add_examples_set(self)
 
     def post_delete(self):
         webcam_fs.delete_examples_set(self)

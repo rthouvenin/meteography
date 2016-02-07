@@ -13,6 +13,7 @@ ALLOWED_HOSTS = []
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = '1^#W5u1O^$O3)m{!4i[A32KA0KMn+[]Jv#1)xwt!/Q[8Nh&,vA!KL18^.ObQe|rz'
 
+INSTALLED_APPS = INSTALLED_APPS + ('django_extensions',)
 
 # Database
 # https://docs.djangoproject.com/en/1.8/ref/settings/#databases

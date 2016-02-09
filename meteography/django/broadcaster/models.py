@@ -1,8 +1,6 @@
 from datetime import timedelta
 import time
 
-import matplotlib.pylab as plt
-
 from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
@@ -206,8 +204,7 @@ class Prediction(models.Model):
         return '/%s/%s' % (WEBCAM_STATIC_URL, rel_path)
 
     def create(self, *args, **kwargs):
-        with webcam_fs.fs.open(self.path, 'w') as fp:
-            plt.imsave(fp, self.sci_bytes)
+        webcam_fs.add_prediction(self)
         self.save(*args, **kwargs)
 
     def as_picture(self):

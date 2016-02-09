@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from contextlib import contextmanager
+from datetime import datetime
 import logging
 from numbers import Number
 import os.path
@@ -7,6 +8,7 @@ import shutil
 import threading
 
 from django.core.files.storage import FileSystemStorage
+import matplotlib.pylab as plt
 from PIL import Image
 
 from meteography.dataset import RawFeatures, PCAFeatures, RBMFeatures
@@ -37,12 +39,12 @@ class WebcamStorage:
         return self.fs.path(webcam_id + '.h5')
 
     def _image_path(self, webcam_id, img_dir, timestamp=None):
-        if timestamp is None:
-            rel_path = os.path.join(webcam_id, img_dir)
-        else:
-            basename = '%s.jpg' % str(timestamp)
-            rel_path = os.path.join(webcam_id, img_dir, basename)
-        #return self.fs.path(rel_path)
+        rel_path = os.path.join(webcam_id, img_dir)
+        if timestamp is not None:
+            path_format = settings.PICTURE_PATH.replace('%t', str(timestamp))
+            pic_date = datetime.fromtimestamp(timestamp)
+            pic_path = pic_date.strftime(path_format)
+            rel_path = os.path.join(rel_path, pic_path)
         return rel_path
 
     def picture_path(self, webcam_id, timestamp=None):
@@ -193,6 +195,9 @@ class WebcamStorage:
 
         # store the image in file
         filepath = self.picture_path(webcam.webcam_id, timestamp)
+        dirname = self.fs.path(os.path.dirname(filepath))
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
         with self.fs.open(filepath, mode='wb') as fp_res:
             img.save(fp_res)
 
@@ -202,6 +207,14 @@ class WebcamStorage:
             abspath = self.fs.path(filepath)
             img_dict = dataset.add_image(abspath)
             return img_dict
+
+    def add_prediction(self, prediction):
+        dirname = os.path.dirname(self.fs.path(prediction.path))
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+
+        with self.fs.open(prediction.path, 'w') as fp:
+            plt.imsave(fp, prediction.sci_bytes)
 
     def add_examples_set(self, params):
         """

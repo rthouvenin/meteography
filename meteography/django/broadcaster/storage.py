@@ -11,7 +11,7 @@ from django.core.files.storage import FileSystemStorage
 import matplotlib.pylab as plt
 from PIL import Image
 
-from meteography.dataset import RawFeatures, PCAFeatures, RBMFeatures
+from meteography.features import RawFeatures, PCAFeatures, RBMFeatures
 from meteography.dataset import ImageSet, DataSet
 from meteography.django.broadcaster import settings
 from meteography.django.broadcaster.request_cache import get_dataset_cache

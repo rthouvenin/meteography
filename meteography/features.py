@@ -190,11 +190,11 @@ class RBMFeatures(FeaturesExtractor):
         n_dims : int
             Number of components to keep.
         """
-        pca_model = BernoulliRBM(n_components=n_dims).fit(data)
-        return cls(pca_model)
+        rbm_model = BernoulliRBM(n_components=n_dims).fit(data)
+        return cls(rbm_model)
 
 
-class FeatureSet:
+class FeatureSet(object):
     """
     Represents a dataset containing the features of a set of images.
     It is a wrapper of a Pytables group where the data is stored.
@@ -206,29 +206,37 @@ class FeatureSet:
     name : str
         the name of this set, unique in a ImageSet
     """
-    def __init__(self, root_group, features_obj=None):
+    def __init__(self, where, extractor=None):
         """
-        Open a FeatureSet from an existing Pytables group.
+        Open a FeatureSet from an existing Pytables group, or create one.
 
         Init parameters
         ---------------
-        root_group : Pytables group
-        features_obj : a FeaturesExtractor object or None (optional)
+        where : Pytables group
+            Where in the pytables file the set is stored. If `extractor` is
+            not provided, the set is read from the existing `where` node. If it
+            is provided, the set is created in `extractor.name` under `where`.
+        extractor : FeaturesExtractor or None (optional)
             The extractor to use to add data to this feature set.
             If None, it is read from the data stored in the Pytables group
         """
-        self.root = root_group
-        if features_obj is None:
+        if extractor is None:
+            self.root = where
             fn = filenode.open_node(self.root.model, 'r')
             self.features_obj = pickle.load(fn)
             fn.close()
+
         else:
-            self.features_obj = features_obj
-            if 'model' not in self.root:
-                fn = filenode.new_node(self.root._v_file,
-                                       where=self.root, name='model')
-                pickle.dump(features_obj, fn, pickle.HIGHEST_PROTOCOL)
-                fn.close()
+            fp = where._v_file
+            self.root = fp.create_group(where, extractor.name)
+            fp.create_earray(self.root, 'features', extractor.atom,
+                             shape=(0, extractor.nb_features))
+
+            self.features_obj = extractor
+            fn = filenode.new_node(self.root._v_file,
+                                   where=self.root, name='model')
+            pickle.dump(extractor, fn, pickle.HIGHEST_PROTOCOL)
+            fn.close()
 
     @property
     def nb_features(self):
@@ -237,28 +245,6 @@ class FeatureSet:
     @property
     def name(self):
         return self.features_obj.name
-
-    @classmethod
-    def create(cls, tables_file, where, features_obj):
-        """
-        Initializes a Pytables group to hold a FeatureSet and return an
-        associated instance.
-
-        Parameters
-        ----------
-        tables_files : Pytables file
-            An already opened (writable) Pytable file
-        where : Where to create the Pytables group that will hold the data
-        features_obj : FeatureExtractor object
-            The extractor that will be used to extract the features to the set
-        """
-        group_name = features_obj.name
-        group = tables_file.create_group(where, group_name)
-
-        tables_file.create_earray(group, 'features', features_obj.atom,
-                                  shape=(0, features_obj.nb_features))
-
-        return cls(group, features_obj)
 
     def remove(self):
         "Delete the associated Pytables group"

@@ -47,7 +47,7 @@ def parse_path(filename):
     return int(time.mktime(date.timetuple()))
 
 
-class ImageSet:
+class ImageSet(object):
     """
     An ImageSet is a container for the complete list of webcam snapshots
     that can be used to train the learner. It is backed by a HDF5 file.
@@ -61,25 +61,35 @@ class ImageSet:
     feature_sets : dictionary
         A mapping name -> FeatureSet of all the feature sets stored on file
     """
+    node_name = 'images'
+    table_name = 'imgset'
     # pytables descriptor for the table of images.
     table_descriptor = {
         'name': tables.StringCol(256),
         'time': tables.UIntCol(),
     }
 
-    def __init__(self, fileh):
+    def __init__(self, where, name, img_shape=None):
         """
         Instantiate an ImageSet from an existing Pytables file
         Init parameters
         ----------
-        fileh : pytables file descriptor
-            An opened file descriptor pointing to a HDF5 file. The file must
-            already contain the required nodes, they can be created with the
-            method `create`.
+        where : pytables group
+            Where in a pytables file the imageset should be stored
+        name : str
+            Name of the pytables node that hosts the imageset
         """
-        self.fileh = fileh
-        self.root = fileh.root.images
-        self.table = self.root.imgset
+        self.fileh = where._v_file
+        if name in where:
+            self.root = where._f_get_child(name)
+            self.table = self.root._f_get_child(self.table_name)
+        else:
+            self.root = self.fileh.create_group(where, name)
+            self.table = self.fileh.create_table(self.root, self.table_name,
+                                                 self.table_descriptor)
+            self.table.attrs.img_shape = img_shape
+            self.table.cols.time.create_csindex()
+
         self.img_shape = self.table.attrs.img_shape
         self.is_grey = len(self.img_shape) == 2
         self._times = None
@@ -87,7 +97,7 @@ class ImageSet:
         self.feature_sets = {}
         for node in self.root:
             node_name = node._v_name
-            if node_name not in ['imgset']:
+            if node_name not in [self.table_name]:
                 self.feature_sets[node_name] = FeatureSet(node)
 
     @classmethod
@@ -114,13 +124,9 @@ class ImageSet:
             fp = tables.open_file(thefile, mode='w')
         else:
             fp = thefile
-        try:
-            group = fp.create_group('/', 'images')
-            table = fp.create_table(group, 'imgset', cls.table_descriptor)
-            table.attrs.img_shape = img_shape
-            table.cols.time.create_csindex()
 
-            return cls(fp)
+        try:
+            return cls(fp.root, cls.node_name, img_shape)
         except Exception:
             #Avoid an orphan open file in case of a problem
             if fp is not thefile:
@@ -143,7 +149,7 @@ class ImageSet:
             fp = tables.open_file(thefile, mode='a')
         else:
             fp = thefile
-        return cls(fp)
+        return cls(fp.root, cls.node_name)
 
     def close(self):
         "Close the underlying pytables file."
@@ -170,7 +176,7 @@ class ImageSet:
             The extractor to associated to the feature set.
         """
         if extractor.name not in self.feature_sets:
-            feature_set = FeatureSet.create(self.fileh, self.root, extractor)
+            feature_set = FeatureSet(self.root, extractor)
             self.feature_sets[extractor.name] = feature_set
 
             # Extract the features of existing images and append them
@@ -477,24 +483,30 @@ class ImageSet:
                 return None
 
 
-class DataSet:
-    def __init__(self, fileh, imageset):
+class DataSet(object):
+    node_name = 'examples'
+
+    def __init__(self, where, name, imageset):
         """
-        Build a DataSet from the images of `imageset`.
-        The input and target data are built, but not split into training,
-        validation and test sets (use `split` for that).
+        A DataSet built from the images of `imageset`.
 
         Parameters
         ----------
-        fileh : pytables file descriptor
-            An opened file descriptor pointing to a HDF5 file.
+        where : pytables group
+            Where in a pytables file the dataset should be stored
+        name : str
+            Name of the pytables node that hosts the dataset
         imageset : ImageSet
             The ImageSet containing all the source images.
         """
-        self._reset(fileh, imageset)
+        self._reset(where, name, imageset)
 
-    def _reset(self, fileh, imageset):
-        self.fileh = fileh
+    def _reset(self, where, name, imageset):
+        self.fileh = where._v_file
+        if name in where:
+            self.root = where._f_get_child(name)
+        else:
+            self.root = self.fileh.create_group(where, name)
         self.imgset = imageset
         self.img_shape = imageset.img_shape
 
@@ -523,13 +535,13 @@ class DataSet:
             fp = thefile
 
         try:
-            fp.create_group('/', 'examples')
-        except Exception as e:
+            dataset = cls(fp.root, cls.node_name, imgset)
+        except Exception:
             #Avoid an orphan open file in case of a problem
             if fp is not thefile:
                 fp.close()
-            raise e
-        return cls(fp, imgset)
+            raise
+        return dataset
 
     @classmethod
     def open(cls, imageset, thefile=None):
@@ -555,7 +567,7 @@ class DataSet:
             fp = tables.open_file(thefile, mode='a')
         else:
             fp = thefile
-        return cls(fp, imageset)
+        return cls(fp.root, cls.node_name, imageset)
 
     def close(self):
         "Close the underlying file(s), including the ImageSet"
@@ -584,7 +596,7 @@ class DataSet:
     def _nodify(self, fuzzy_node):
         "Retrieve a set of examples by name, if `fuzzy_node` is not a node."
         if not hasattr(fuzzy_node, '_v_attrs'):
-            ex_set = self.fileh.get_node(self.fileh.root.examples, fuzzy_node)
+            ex_set = self.fileh.get_node(self.root, fuzzy_node)
         else:
             ex_set = fuzzy_node
         return ex_set
@@ -611,15 +623,13 @@ class DataSet:
         pytables node : the created node.
         """
         self.delete_set(name)
-        ex_group = self.fileh.root.examples
-        ex_set = self.fileh.create_group(ex_group, name)
+        ex_set = self.fileh.create_group(self.root, name)
         ex_set._v_attrs.intervals = intervals
         ex_set._v_attrs.features = feature_set
         self._create_set_arrays(ex_set, 'img_refs', 'input', 'output')
         return ex_set
 
     def _create_set_arrays(self, ex_set, refs_name, in_name, out_name):
-        fh = self.fileh
         hist_len = len(ex_set._v_attrs.intervals)
         fset = self.imgset.get_feature_set(ex_set._v_attrs.features)
         imgdim = fset.nb_features
@@ -627,14 +637,14 @@ class DataSet:
         pixel_atom = tables.Atom.from_sctype(PIXEL_TYPE)
 
         if refs_name is not None:
-            fh.create_earray(ex_set, refs_name, atom=tables.IntAtom(),
-                             shape=(0, hist_len+1))
+            self.fileh.create_earray(ex_set, refs_name, atom=tables.IntAtom(),
+                                     shape=(0, hist_len+1))
         if in_name is not None:
-            fh.create_earray(ex_set, in_name, atom=pixel_atom,
-                             shape=(0, nb_feat))
+            self.fileh.create_earray(ex_set, in_name, atom=pixel_atom,
+                                     shape=(0, nb_feat))
         if out_name is not None:
-            fh.create_earray(ex_set, out_name, atom=pixel_atom,
-                             shape=(0, imgdim))
+            self.fileh.create_earray(ex_set, out_name, atom=pixel_atom,
+                                     shape=(0, imgdim))
         self.fileh.flush()
 
     def get_set(self, name):
@@ -678,9 +688,8 @@ class DataSet:
         Delete a set of training examples.
         Silent ignore if the set does not exist.
         """
-        ex_group = self.fileh.root.examples
-        if name in ex_group:
-            self.fileh.remove_node(ex_group, name, recursive=True)
+        if name in self.root:
+            self.fileh.remove_node(self.root, name, recursive=True)
             self.fileh.flush()
 
     def _find_examples(self, intervals, feature_set):
@@ -818,7 +827,7 @@ class DataSet:
         if ex_set is not None:
             ex_sets = [self._nodify(ex_set)]
         else:
-            ex_sets = iter(self.fileh.root.examples)
+            ex_sets = iter(self.root)
 
         img = self.imgset.add_from_file(imgfile)
 
@@ -878,19 +887,24 @@ class DataSet:
          - This will repack the entire file, including the ImageSet data and
         any other data that may be there from other sources.
         """
+        old_path = self.root._v_parent._v_pathname
+        old_name = self.root._v_name
+
         # Copy the file over itself
-        old_name = self.fileh.filename
-        temp_name = old_name + '.temp'
-        self.fileh.copy_file(temp_name)
+        old_filename = self.fileh.filename
+        temp_filename = old_filename + '.temp'
+        self.fileh.copy_file(temp_filename)
         self.fileh.close()
-        shutil.move(temp_name, old_name)
+        shutil.move(temp_filename, old_filename)
 
         # Re-initialize the file pointer and the ImageSet instance
         if self.imgset.fileh is self.fileh:
             self.imgset.close()
-            new_imgset = ImageSet.open(old_name)
+            new_imgset = ImageSet.open(old_filename)
             new_fileh = new_imgset.fileh
         else:
             new_imgset = self.imgset
-            new_fileh = tables.open_file(old_name, mode='a')
-        self._reset(new_fileh, new_imgset)
+            new_fileh = tables.open_file(old_filename, mode='a')
+
+        where = new_fileh.get_node(old_path)
+        self._reset(where, old_name, new_imgset)

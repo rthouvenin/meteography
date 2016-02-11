@@ -194,6 +194,22 @@ class RBMFeatures(FeaturesExtractor):
         return cls(rbm_model)
 
 
+def extractor_cached(func):
+    """A memoizer for methods of FeatureSet that return a feature extractor"""
+    cache = {}
+
+    def memoizer(*args, **kwargs):
+        feature_set = args[0]
+        filename = feature_set.root._v_file.filename
+        set_name = feature_set.root._v_pathname
+        key = '%s-%s' % (filename, set_name)
+        if key not in cache:
+            cache[key] = func(*args, **kwargs)
+        return cache[key]
+
+    return memoizer
+
+
 class FeatureSet(object):
     """
     Represents a dataset containing the features of a set of images.
@@ -222,9 +238,7 @@ class FeatureSet(object):
         """
         if extractor is None:
             self.root = where
-            fn = filenode.open_node(self.root.model, 'r')
-            self.features_obj = pickle.load(fn)
-            fn.close()
+            self.extractor = self._get_model()
 
         else:
             fp = where._v_file
@@ -232,19 +246,29 @@ class FeatureSet(object):
             fp.create_earray(self.root, 'features', extractor.atom,
                              shape=(0, extractor.nb_features))
 
-            self.features_obj = extractor
-            fn = filenode.new_node(self.root._v_file,
-                                   where=self.root, name='model')
-            pickle.dump(extractor, fn, pickle.HIGHEST_PROTOCOL)
-            fn.close()
+            self.extractor = self._store_model(extractor)
 
     @property
     def nb_features(self):
-        return self.features_obj.nb_features
+        return self.extractor.nb_features
 
     @property
     def name(self):
-        return self.features_obj.name
+        return self.extractor.name
+
+    def _store_model(self, extractor):
+        fn = filenode.new_node(self.root._v_file,
+                               where=self.root, name='model')
+        pickle.dump(extractor, fn, pickle.HIGHEST_PROTOCOL)
+        fn.close()
+        return extractor
+
+    @extractor_cached
+    def _get_model(self):
+        fn = filenode.open_node(self.root.model, 'r')
+        extractor = pickle.load(fn)
+        fn.close()
+        return extractor
 
     def remove(self):
         "Delete the associated Pytables group"
@@ -252,13 +276,13 @@ class FeatureSet(object):
 
     def append(self, pixels):
         "Extract features from the given data and add them to the set"
-        data = self.features_obj.extract(pixels)
+        data = self.extractor.extract(pixels)
         self.root.features.append([data])
         return data
 
     def update(self, idx, pixels):
         "Extract features from the given data and update the rows at `idx`"
-        data = self.features_obj.extract(pixels)
+        data = self.extractor.extract(pixels)
         self.root.features[idx, :] = data
         return data
 

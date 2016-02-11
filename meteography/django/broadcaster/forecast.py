@@ -70,7 +70,7 @@ def update_prediction(prediction, real_pic, metric_name='euclidean'):
                 raise ValueError("""wminkowski-pca cannnot be used
                                     without a PCA feature set""")
 
-            pca_extractor = dataset.imgset.feature_sets['pca'].features_obj
+            pca_extractor = dataset.imgset.feature_sets['pca'].extractor
             weights = pca_extractor.pca.explained_variance_ratio_
             pred_data = pca_extractor.extract(pred_pic.pixels)
             real_data = pca_extractor.extract(real_pic.pixels)

@@ -1,3 +1,6 @@
+# -*- coding:utf-8 -*-
+
+from itertools import groupby
 import io
 from datetime import datetime
 
@@ -94,23 +97,39 @@ def picture(request, webcam_id, timestamp):
     return HttpResponse(status=204)
 
 
+def _mean_error(points):
+    return np.mean([p[1] for p in points])
+
+
 def error_graph(request, webcam_id, pname):
     "Generate a graph of error evolution over time"
     pred_params = get_object_or_404(PredictionParams,
                                     features__webcam_id=webcam_id, name=pname)
 
-    error_data = pred_params.error_data()
+    error_data = list(pred_params.error_data())
     if error_data:
-        dates, errors = zip(*error_data)
-        # Smoothen data with moving average
-        window = 12
-        errors = np.convolve(errors, np.ones(window)/window, mode='same')
+        # Compute daily average if enough data
+        latest_error = error_data[-1]
+        time_span = latest_error[0] - error_data[0][0]
+        print(time_span.days)
+        if time_span.days > 14:
+            def key(elem):
+                return (latest_error[0] - elem[0]).days
+            day_split = (list(g) for k, g in groupby(error_data, key))
+            daily_average = [(g[0][0], _mean_error(g)) for g in day_split]
+            dates, errors = zip(*daily_average)
+            graph_title = "Evolution of daily average error over time"
+        else:
+            dates, errors = zip(*error_data)
+            graph_title = "Evolution of error value over time"
+    else:
+        graph_title = "No data yet"
 
     # Generate the graph with matplotlib
     fig = Figure()
     FigureCanvas(fig)
     ax = fig.add_subplot(111)
-    ax.set_title("Evolution of error value over time")
+    ax.set_title(graph_title)
     ax.set_xlabel("Time")
     ax.set_ylabel("Error")
     if error_data:
